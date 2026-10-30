@@ -6,11 +6,13 @@ import * as Comlink from "comlink";
 import * as ort from "onnxruntime-web/wasm";
 import { createWorker } from "tesseract.js";
 import {
-  getAiPayload, paddleEngine, redact, scan, tesseractEngine, withFallback,
-  type AiClient, type AiRequest, type AuditEvent, type AuditInput, type ChainCheck, type OcrEngine,
-  type RedactOptions, type RedactResult, type ScanOptions, type ScanResult,
+  complianceReport, GENERAL_COMPANY_POLICY, getAiPayload, paddleEngine, parsePolicy, redact, scan, tesseractEngine, withFallback,
+  type AiClient, type AiRequest, type AuditEvent, type AuditInput, type ChainCheck, type ComplianceReport, type Destination,
+  type LoadedPolicy, type OcrEngine, type PolicyLoad, type RedactOptions, type RedactResult, type ScanOptions, type ScanResult,
 } from "@redactguard/core";
-import { allAuditEvents, auditKey, auditStore, checkAuditChain, logAudit } from "../audit/idbStore.ts";
+import {
+  allAuditEvents, auditKey, auditStore, checkAuditChain, deletePolicy, getActivePolicyId, listPolicies, logAudit, putPolicy, setActivePolicyId,
+} from "../audit/idbStore.ts";
 
 export const ENGINE_READY = "rg-engine-ready";
 /** Same worker serves the Web Lab and the extension's offscreen document. */
@@ -82,6 +84,62 @@ export interface ScanRequest {
   options: ScanOptions;
   /** Present only when the user turned AI on. Held for this call only. */
   aiKey?: string;
+  /** Where the file is going; applies the active policy's inside/outside rules (D-039). */
+  destination?: Destination;
+  /** A policy given with the request (the extension keeps its own); otherwise this origin's active one. */
+  policyText?: string;
+}
+
+// ---------- company policies (D-039) ----------
+
+const BUILTIN_ID = "builtin-general";
+const BUILTIN_TEXT = JSON.stringify(GENERAL_COMPANY_POLICY, null, 2);
+
+export type AddPolicyResult = { ok: true; id: string } | { ok: false; errors: string[] };
+
+/** What the Policy tab shows: everything except the raw JSON. */
+export interface PolicySummary {
+  id: string;
+  builtIn: boolean;
+  name: string;
+  version: string;
+  owner: string | null;
+  description: string | null;
+  sha256: string;
+  internalDomains: string[];
+  dictionaries: { name: string; terms: number }[];
+  rules: { id: string; title: string; clause: string; outside: string; inside: string }[];
+}
+
+const parsedCache = new Map<string, LoadedPolicy>();
+async function load(text: string): Promise<PolicyLoad> {
+  const hit = parsedCache.get(text);
+  if (hit) return { ok: true, loaded: hit };
+  const r = await parsePolicy(text);
+  if (r.ok) parsedCache.set(text, r.loaded);
+  return r;
+}
+
+function summarize(id: string, { policy, sha256 }: LoadedPolicy): PolicySummary {
+  return {
+    id, builtIn: id === BUILTIN_ID, name: policy.name, version: policy.version, owner: policy.owner ?? null,
+    description: policy.description ?? null, sha256, internalDomains: policy.internalDomains,
+    dictionaries: Object.entries(policy.dictionaries).map(([name, terms]) => ({ name, terms: terms.length })),
+    rules: policy.rules.map((r) => ({ id: r.id, title: r.title, clause: r.clause, outside: r.outside, inside: r.inside })),
+  };
+}
+
+async function policyTextById(id: string): Promise<string | null> {
+  if (id === BUILTIN_ID) return BUILTIN_TEXT;
+  return (await listPolicies()).find((p) => p.id === id)?.text ?? null;
+}
+
+async function activeLoaded(): Promise<LoadedPolicy | null> {
+  const id = await getActivePolicyId();
+  const text = id ? await policyTextById(id) : null;
+  if (!text) return null;
+  const r = await load(text);
+  return r.ok ? r.loaded : null;
 }
 
 const api = {
@@ -89,9 +147,18 @@ const api = {
     return "pong";
   },
   async scan(bytes: Uint8Array, req: ScanRequest): Promise<ScanResult> {
+    let loaded: LoadedPolicy | null = null;
+    if (req.policyText) {
+      const r = await load(req.policyText);
+      if (!r.ok) throw new Error(`The company policy can't be used: ${r.errors[0]}`);
+      loaded = r.loaded;
+    } else {
+      loaded = await activeLoaded();
+    }
     const result = await scan(bytes, req.options, {
       ocr: req.options.ocrPageCap > 0 ? lazyOcr : null,
       ai: req.aiKey ? anthropicClient(req.aiKey) : null,
+      policy: loaded ? { loaded, destination: req.destination ?? "outside" } : null,
     });
     await logAudit({
       origin: ORIGIN, action: "scan", fileSha256: result.fileSha256, fileType: result.fileType, verdict: result.verdict,
@@ -121,6 +188,52 @@ const api = {
   },
   aiPayload(scanId: string, payloadId: string): AiRequest | null {
     return getAiPayload(scanId, payloadId);
+  },
+  compliance(scanId: string): ComplianceReport | null {
+    return complianceReport(scanId);
+  },
+  async policies(): Promise<{ active: string | null; list: PolicySummary[] }> {
+    const list: PolicySummary[] = [];
+    const builtin = await load(BUILTIN_TEXT);
+    if (builtin.ok) list.push(summarize(BUILTIN_ID, builtin.loaded));
+    for (const p of await listPolicies()) {
+      const r = await load(p.text);
+      if (r.ok) list.push(summarize(p.id, r.loaded));
+    }
+    const active = await getActivePolicyId();
+    return { active: list.some((p) => p.id === active) ? active : null, list };
+  },
+  /** Validates, stores and activates an uploaded policy. Errors are written so a compliance team can fix them. */
+  async addPolicy(text: string): Promise<AddPolicyResult> {
+    const r = await load(text);
+    if (!r.ok) return r;
+    const id = `p-${r.loaded.sha256.slice(0, 16)}`;
+    const { name, version } = r.loaded.policy;
+    await putPolicy({ id, text, name, version, sha256: r.loaded.sha256, addedAt: new Date().toISOString() });
+    await setActivePolicyId(id);
+    await logAudit({ origin: ORIGIN, action: "policy_change", detail: `added and turned on "${name}" v${version} (sha256 ${r.loaded.sha256.slice(0, 16)})` });
+    return { ok: true, id };
+  },
+  async activatePolicy(id: string | null): Promise<void> {
+    const text = id ? await policyTextById(id) : null;
+    if (id && !text) throw new Error("That policy no longer exists");
+    await setActivePolicyId(id);
+    const r = text ? await load(text) : null;
+    await logAudit({
+      origin: ORIGIN, action: "policy_change",
+      detail: r?.ok ? `turned on "${r.loaded.policy.name}" v${r.loaded.policy.version} (sha256 ${r.loaded.sha256.slice(0, 16)})` : "turned the company policy off",
+    });
+  },
+  async removePolicy(id: string): Promise<void> {
+    if (id === BUILTIN_ID) throw new Error("The example policy is built in and can't be removed");
+    const text = await policyTextById(id);
+    const r = text ? await load(text) : null;
+    await deletePolicy(id);
+    if ((await getActivePolicyId()) === id) await setActivePolicyId(null);
+    await logAudit({ origin: ORIGIN, action: "policy_change", detail: `removed "${r?.ok ? r.loaded.policy.name : id}"` });
+  },
+  policyText(id: string): Promise<string | null> {
+    return policyTextById(id);
   },
 };
 

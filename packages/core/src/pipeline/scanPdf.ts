@@ -105,7 +105,7 @@ function scanPageStructures(page: PdfPage, out: FindingCollector, layers: TextLa
   page.comments.forEach((c) => {
     const text = c.contents.replace(/\s+/g, " ").trim();
     if (text) {
-      const layer = boxedLayer([{ text, rect: c.rect }], page.index);
+      const layer = { ...boxedLayer([{ text, rect: c.rect }], page.index), structural: { removable: true, page: page.index } };
       // Comments aren't drawn as page text; they go when annotations are stripped, so no page areas.
       collectTextFindings(layer, out, { baseSource: "hidden_office", reasonText: "is written in a comment on the page", noRects: true });
       out.add({

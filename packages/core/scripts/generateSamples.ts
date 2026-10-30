@@ -505,6 +505,59 @@ function idCardPhoto(): void {
   });
 }
 
+// ---------- 14–15. Documents for company-policy tests (D-039) ----------
+
+function hrPayslip(): void {
+  const { doc, resources } = newDocWithFont();
+  const content =
+    textOp(72, 750, 16, "TESTCORP PVT LTD - PAYSLIP (FAKE DATA)") +
+    textOp(72, 725, 11, "Pay period: September 2026") +
+    textOp(72, 700, 11, `Employee Name: ${FAKE.name}`) +
+    textOp(72, 684, 11, "Employee ID: EMP-004512") +
+    textOp(72, 668, 11, "Designation: Senior Analyst") +
+    textOp(72, 652, 11, "Date of Joining: 01-04-2022") +
+    textOp(72, 636, 11, `PAN: ${FAKE.pan}`) +
+    textOp(72, 620, 11, `Salary account: ${FAKE.accountNo}  IFSC: ${FAKE.ifsc}`) +
+    textOp(72, 590, 11, "Basic Salary            Rs 52,000.00") +
+    textOp(72, 574, 11, "House Rent Allowance    Rs 20,800.00") +
+    textOp(72, 558, 11, "Net Pay                 Rs 68,450.00") +
+    textOp(72, 528, 11, "Performance Rating: Exceeds expectations") +
+    textOp(72, 512, 11, "Manager Comments: Ready for promotion next cycle");
+  doc.insertPage(-1, doc.addPage([0, 0, 612, 792], 0, resources, content));
+  const bytes = bytesOf(doc, "compress");
+  assert(pageText(bytes).includes("EMP-004512"), "payslip text must be extractable");
+  write("hr-payslip.pdf", bytes, {
+    description: "Fake payslip: employee name and ID, designation, PAN, salary account, pay lines, rating and manager comments. Used with the example company policy.",
+    expectedFindings: [
+      { type: "name", source: "text", page: 0, min: 1 },
+      { type: "pan", source: "text", page: 0, min: 1 },
+      { type: "account", source: "text", page: 0, min: 1 },
+      { type: "salary", source: "text", page: 0, min: 1 },
+    ],
+  });
+}
+
+function confidentialProject(): void {
+  const { doc, resources } = newDocWithFont();
+  const content =
+    textOp(72, 760, 10, "STRICTLY CONFIDENTIAL - INTERNAL ONLY") +
+    textOp(72, 735, 16, "Project Falcon: Q4 status (fake data)") +
+    textOp(72, 705, 11, "Client: Globex Ltd. Sponsor: Meera Testkumar (meera.t@example.com)") +
+    textOp(72, 689, 11, "Approved budget: Rs 4,50,00,000. Spent to date: Rs 1,12,430.55") +
+    textOp(72, 673, 11, "Tracker: https://jira.intranet.example.com/browse/FAL-12") +
+    textOp(72, 657, 11, "Staging key (rotate!): AKIAIOSFODNN7EXAMPLE") +
+    textOp(72, 627, 11, "Next milestone: integration with the Northwind deal pipeline.");
+  doc.insertPage(-1, doc.addPage([0, 0, 612, 792], 0, resources, content));
+  const bytes = bytesOf(doc, "compress");
+  assert(pageText(bytes).includes("Project Falcon"), "project text must be extractable");
+  write("confidential-project.pdf", bytes, {
+    description: "Fake project status note marked STRICTLY CONFIDENTIAL: codename, client, sponsor, budget amounts, an intranet link and the AWS documentation example key. Used with the example company policy.",
+    expectedFindings: [
+      { type: "email", source: "text", page: 0, min: 1 },
+    ],
+  });
+}
+
 bankStatement();
 incrementalEdit();
 aadhaarMock();
@@ -518,4 +571,6 @@ await hiddenSheetXlsx();
 exposedStatement();
 photoWithGpsPdf();
 idCardPhoto();
+hrPayslip();
+confidentialProject();
 console.log("all samples generated and self-checked");

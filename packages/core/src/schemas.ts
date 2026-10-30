@@ -153,7 +153,7 @@ export const RedactResult = z.strictObject({
 });
 export type RedactResult = z.infer<typeof RedactResult>;
 
-export const AuditAction = z.enum(["scan", "redact", "verify", "override", "trust_site", "ai_call"]);
+export const AuditAction = z.enum(["scan", "redact", "verify", "override", "trust_site", "ai_call", "policy_change"]);
 export type AuditAction = z.infer<typeof AuditAction>;
 
 export const AuditEvent = z.strictObject({

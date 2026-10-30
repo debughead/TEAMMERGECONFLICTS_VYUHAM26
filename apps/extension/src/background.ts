@@ -1,6 +1,9 @@
 // Service worker: validates and routes messages only (rules/extension.md). Heavy work runs in the
 // offscreen document's Web Worker, because Chrome stops idle service workers.
-import { DEFAULT_SETTINGS, Settings, ToBackground, type RedactReply, type ScanReply, type TabStatus, type ToContent, type ToOffscreen } from "./messages.ts";
+import {
+  DEFAULT_SETTINGS, destinationOf, Settings, StoredPolicy, ToBackground,
+  type RedactReply, type ScanReply, type TabStatus, type ToContent, type ToOffscreen,
+} from "./messages.ts";
 
 const OFFSCREEN_URL = "offscreen.html";
 /** Masked scan results per tab, for the side panel. Session storage clears when the browser closes. */
@@ -17,6 +20,12 @@ async function settings(): Promise<Settings> {
   const raw = await chrome.storage.local.get("settings");
   const parsed = Settings.safeParse(raw["settings"]);
   return parsed.success ? parsed.data : DEFAULT_SETTINGS;
+}
+
+/** The company policy the user (or IT) put in place, if any (D-039). */
+async function storedPolicy(): Promise<StoredPolicy | null> {
+  const parsed = StoredPolicy.safeParse((await chrome.storage.local.get("policy"))["policy"]);
+  return parsed.success ? parsed.data : null;
 }
 
 let creating: Promise<void> | null = null;
@@ -92,16 +101,30 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     return false;
   }
 
+  if (msg.type === "policy-change") {
+    // Only our side panel changes the policy (e2e builds also accept the panel opened as a tab).
+    const fromPanel = (sender.tab ? import.meta.env.MODE === "e2e" : true) && sender.url?.split("?")[0] === chrome.runtime.getURL(PANEL_URL);
+    if (!fromPanel) return false;
+    void toOffscreen({ type: "offscreen-audit", action: "policy_change", domain: "", detail: msg.detail, fileSha256: null })
+      .then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    return true;
+  }
+
   void (async () => {
     const s = await settings();
     switch (msg.type) {
       case "scan": {
+        const policy = await storedPolicy();
         const reply = await toOffscreen<ScanReply>({
           type: "offscreen-scan", b64: msg.b64, context: msg.context,
           trustedSite: s.trusted.includes(msg.context.domain),
           ...(s.aiOn && s.aiKey ? { aiKey: s.aiKey } : {}),
+          // The site's domain decides which side of the policy applies: no one has to choose.
+          ...(policy ? { policyText: policy.text, destination: destinationOf(policy, msg.context.domain) } : {}),
         });
-        if (reply.ok) await chrome.storage.session.set({ [tabKey(tabId)]: { fileName: msg.fileName, context: msg.context, result: reply.result, status: "pending" } });
+        if (reply.ok) {
+          await chrome.storage.session.set({ [tabKey(tabId)]: { fileName: msg.fileName, context: msg.context, result: reply.result, compliance: reply.compliance, status: "pending" } });
+        }
         sendResponse(reply);
         break;
       }

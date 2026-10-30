@@ -2,7 +2,7 @@
 
 Claude Code keeps this file current. Humans can edit it too; Claude reads it at the start of every task and on `/status`.
 
-**Last updated:** 2026-10-31 · **Overall:** Phase 0, 0b, PP-OCR done; phase-0 edge cases fixed (D-041–D-043): 100/100 edge tests, core 398/399 (1 known synthetic QR test fails)
+**Last updated:** 2026-10-31 · **Overall:** Phase 0, 0b, PP-OCR and Phase 1 (company policies) merged; phase-0 edge cases fixed (D-041–D-043); 1 known synthetic QR test fails
 
 ## Spikes (hours 0–2): must pass before building on them
 
@@ -30,6 +30,8 @@ Claude Code keeps this file current. Humans can edit it too; Claude reads it at 
 
 - 2026-10-31 Phase-0 edge cases (D-041): all 98 of a teammate's edge tests pass (58 failed before). ID formats, OCR PAN repair, dates of birth, salary/PIN/name rules, AI prompt and reply hardening, PDF header search, JPEG thumbnails, OCR fallback, Word headers/footers/text boxes/white text, Excel quirks, Office custom properties and thumbnails, identity kit with email/date of birth. Page rules ignore the domain (D-042); audit chain has a signed head that catches deleted newest rows (D-043). Guard tests `test/edgeFixes.test.ts`; Web Lab self-test in headless Brave passes, including the audit chain
 - 2026-10-31 Phase 0 (D-034): off-page text, switched-off layers, invisible (same-colour/tiny) text, form values, comments, and GPS/camera metadata in photos inside PDFs are all detected, removed and checked by verify(). `samples/` renamed and tests updated; new samples `bank-statement-exposed.pdf` and `photo-with-gps.pdf`
+- 2026-10-31 Company-policy edge cases (D-040): 11 problems found by a 27-case probe and fixed (incl. comment redaction damaging page text, wrapped terms, 2,000-term dictionary 5.9 s → 14 ms, Word/Excel text rules); permanent edge-case test
+- 2026-10-31 Company policies (D-039): policy JSON format (docs/POLICY.md), engine, Web Lab "Company policy" tab + destination per scan, extension enforcement by site domain with policy blocks, example policy, 31 tests, two samples
 - 2026-10-31 PP-OCR (D-038): main OCR engine with Tesseract fallback; the user's real PAN photo now yields the PAN, name, father's name and date of birth. `pnpm models` fetches the models. New sample `pan-card-photo.jpg`
 - 2026-10-31 Phase 0b (D-037): whiteout/grey/picture covers, clipped text and invisible text detected, removed and verified, with pixel confirmation; MuPDF Shade-callback crash fixed. Spike S7 (PP-OCR) passed
 - 2026-10-31 Extension region map for GPS, click-to-load, CSP `img-src` tightened (D-036)
@@ -67,7 +69,7 @@ Claude Code keeps this file current. Humans can edit it too; Claude reads it at 
 ## Next up
 
 0. ID documents (user idea, 2026-10-31): score printed evidence to classify PAN/Aadhaar/etc., then a per-document field checklist (number, name, father's name, date of birth, photo, signature, QR) reporting each as visible / removed / not found. Reference: the user's `~/Desktop/KYCAgent` (classification, field extraction, `validator.py` evidence scoring), without its LLM. Plan to be agreed first
-0. Phase 1 (compliance policy engine): plan drafted, waiting for the user's go
+0. Phase 1b: IT-managed policies (manifest change, needs approval), partial masking (RedactOptions change, needs approval), table-column detection, policy signals for Word/Excel text
 1. Web Lab map: make it click-to-load like the extension (D-036); today it requests tiles as soon as GPS is shown
 2. Web Lab finding list: apply the same one-row-per-value grouping as the extension (D-035)
 

@@ -1,6 +1,6 @@
 // Offscreen document: hosts the same engine worker as the Web Lab (with the D-024 ready handshake).
 // Only chrome.runtime is available here, so settings arrive with each request.
-import { auditLog, redactScan, scanFile } from "../../weblab/src/engine/client.ts";
+import { auditLog, complianceFor, redactScan, scanFile } from "../../weblab/src/engine/client.ts";
 import { fromB64, toB64, ToOffscreen, type RedactReply, type ScanReply } from "./messages.ts";
 
 
@@ -17,8 +17,10 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         const result = await scanFile(fromB64(msg.b64), {
           options: { profile: "extension", context: msg.context, ocrPageCap: 3, trustedSite: msg.trustedSite },
           ...(msg.aiKey ? { aiKey: msg.aiKey } : {}),
+          ...(msg.policyText ? { policyText: msg.policyText, destination: msg.destination ?? "outside" } : {}),
         });
-        sendResponse({ ok: true, result } satisfies ScanReply);
+        const compliance = msg.policyText ? await complianceFor(result.scanId) : null;
+        sendResponse({ ok: true, result, compliance } satisfies ScanReply);
       } else if (msg.type === "offscreen-redact") {
         const r = await redactScan(msg.scanId, { selectedIds: msg.selectedIds, watermark: null, domain: msg.domain });
         sendResponse({ ok: true, verify: r.verify, b64: r.bytes ? toB64(r.bytes) : null, mime: r.mime, unredacted: r.unredacted } satisfies RedactReply);

@@ -14,6 +14,12 @@ export interface TextLayer {
   /** For each index in `text`, the index into `chars`, or -1 for synthetic separators. */
   textToChar: number[];
   chars: LayerChar[];
+  /**
+   * Set for text that isn't drawn on the page (comments, Office document text): findings in it have
+   * no page area, so redaction never paints over the page. `removable` says whether the clean step
+   * removes it anyway (comments yes, Office body text no, D-003); `page` is null for Office.
+   */
+  structural?: { removable: boolean; page: number | null };
 }
 
 export interface OcrWord {

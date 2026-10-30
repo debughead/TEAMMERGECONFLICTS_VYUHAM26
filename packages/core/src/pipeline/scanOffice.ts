@@ -1,5 +1,6 @@
 // DOCX/XLSX scan (D-003): hidden content and metadata are reported; only comments and metadata
 // are cleanable. Body findings are reported but not redactable here (export to PDF to redact).
+import type { TextLayer } from "../extract/textLayer.ts";
 import { findLocalEntities, maskEntity } from "../detect/localNer.ts";
 import { findIds, maskForDisplay } from "../detect/patterns.ts";
 import { extractDocx, extractXlsx, openZip, type OfficeSegment } from "../extract/office.ts";
@@ -27,7 +28,12 @@ const SEGMENT_LABEL: Record<Exclude<OfficeSegment["kind"], "body">, string> = {
   hidden_column: "Content in hidden columns",
 };
 
-export interface OfficeScanOutput { collector: FindingCollector; warnings: string[] }
+export interface OfficeScanOutput {
+  collector: FindingCollector;
+  warnings: string[];
+  /** Document text per part, for company-policy rules (D-039). Not drawn anywhere, so no page areas. */
+  textLayers: TextLayer[];
+}
 
 export async function scanOffice(bytes: Uint8Array, fileType: Extract<FileType, "docx" | "xlsx">): Promise<OfficeScanOutput> {
   const zip = await openZip(bytes);
@@ -78,5 +84,11 @@ export async function scanOffice(bytes: Uint8Array, fileType: Extract<FileType, 
   return {
     collector: out,
     warnings: unredactable ? ["Word/Excel files can only be cleaned of metadata and comments here. To remove other text, export to PDF and scan that."] : [],
+    textLayers: ex.segments.map((seg) => plainLayer(seg.text, seg.kind === "comment")),
   };
+}
+
+/** A text layer with no positions: Office text isn't laid out on pages here. */
+function plainLayer(text: string, removable: boolean): TextLayer {
+  return { index: 0, text, textToChar: [...text].map(() => -1), chars: [], structural: { removable, page: null } };
 }

@@ -1,4 +1,4 @@
-import type { Finding, Severity } from "@redactguard/core";
+import type { ComplianceReport, Finding, Severity } from "@redactguard/core";
 
 const SEV: Record<Severity, string> = {
   critical: "bg-red-100 text-red-800",
@@ -19,9 +19,10 @@ const SOURCE: Record<string, string> = {
   text: "Visible text",
 };
 
-export function FindingList({ findings, selected, onToggle }: {
-  findings: Finding[]; selected: Set<string>; onToggle: (id: string) => void;
+export function FindingList({ findings, selected, onToggle, policyItems = [] }: {
+  findings: Finding[]; selected: Set<string>; onToggle: (id: string) => void; policyItems?: ComplianceReport["items"];
 }) {
+  const byFinding = new Map(policyItems.map((i) => [i.findingId, i]));
   if (!findings.length) return <p className="text-sm text-slate-600">No sensitive data found.</p>;
   return (
     <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
@@ -38,11 +39,26 @@ export function FindingList({ findings, selected, onToggle }: {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${SEV[f.severity]}`}>{f.severity}</span>
-              <span className="font-medium capitalize">{f.type.replace(/_/g, " ")}</span>
-              <code className="rounded bg-slate-100 px-1.5 text-sm">{f.masked}</code>
+              {(() => {
+                // "Employee ID: E****" (policy finds, dates of birth) reads better as a title and a value.
+                const m = f.type === "other" ? /^([^:]{1,40}): (.+)$/.exec(f.masked) : null;
+                return m ? (
+                  <><span className="font-medium">{m[1]}</span><code className="rounded bg-slate-100 px-1.5 text-sm">{m[2]}</code></>
+                ) : (
+                  <><span className="font-medium capitalize">{f.type.replace(/_/g, " ")}</span><code className="rounded bg-slate-100 px-1.5 text-sm">{f.masked}</code></>
+                );
+              })()}
               <span className="text-xs text-slate-500">{SOURCE[f.source] ?? f.source}{f.page !== null ? ` · page ${f.page + 1}` : ""}</span>
             </div>
             <p className="mt-1 text-sm text-slate-600">{f.reason}</p>
+            {byFinding.has(f.id) && (() => {
+              const i = byFinding.get(f.id)!;
+              return (
+                <p className={`mt-1 text-xs ${i.action === "keep" ? "text-emerald-700" : "text-slate-800"}`}>
+                  {i.action === "keep" ? "Allowed by" : "Required by"} company policy: <span className="font-medium">{i.title}</span>, {i.clause}
+                </p>
+              );
+            })()}
             {!f.redactable && <p className="mt-1 text-xs text-slate-500">Can't be removed here. Export to PDF and scan that to redact it.</p>}
           </div>
         </li>

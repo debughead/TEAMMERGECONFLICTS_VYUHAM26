@@ -4,18 +4,30 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import { appendAudit, generateAuditKey, verifyChain, type AuditEvent, type AuditHead, type AuditInput, type AuditStore, type ChainCheck } from "@redactguard/core";
 
+/** A company policy as uploaded (D-039): the exact JSON text, plus what's shown in lists. */
+export interface StoredPolicy { id: string; text: string; name: string; version: string; sha256: string; addedAt: string }
+
 interface Schema extends DBSchema {
   audit: { key: number; value: AuditEvent };
   // "audit-hmac": the key; "audit-head": the signed head of the chain (D-043). Same store, so no DB upgrade.
   keys: { key: string; value: CryptoKey | AuditHead };
+  policies: { key: string; value: StoredPolicy };
+  meta: { key: string; value: string };
 }
 
 let db: Promise<IDBPDatabase<Schema>> | null = null;
 const open = () =>
-  (db ??= openDB<Schema>("redactguard", 1, {
-    upgrade(d) {
-      d.createObjectStore("audit", { keyPath: "seq" });
-      d.createObjectStore("keys");
+  (db ??= openDB<Schema>("redactguard", 2, {
+    // Versioned upgrades: an existing audit log is kept when the policy stores are added.
+    upgrade(d, oldVersion) {
+      if (oldVersion < 1) {
+        d.createObjectStore("audit", { keyPath: "seq" });
+        d.createObjectStore("keys");
+      }
+      if (oldVersion < 2) {
+        d.createObjectStore("policies", { keyPath: "id" });
+        d.createObjectStore("meta");
+      }
     },
   }));
 
@@ -52,4 +64,16 @@ export async function logAudit(input: AuditInput): Promise<void> {
 export const allAuditEvents = () => auditStore.all();
 export async function checkAuditChain(): Promise<ChainCheck> {
   return verifyChain(await auditStore.all(), { head: await auditStore.head(), key: await auditKey() });
+}
+
+// ---------- company policies (D-039) ----------
+
+export const listPolicies = async (): Promise<StoredPolicy[]> => (await open()).getAll("policies");
+export const putPolicy = async (p: StoredPolicy): Promise<void> => { await (await open()).put("policies", p); };
+export const deletePolicy = async (id: string): Promise<void> => { await (await open()).delete("policies", id); };
+export const getActivePolicyId = async (): Promise<string | null> => (await (await open()).get("meta", "activePolicy")) ?? null;
+export async function setActivePolicyId(id: string | null): Promise<void> {
+  const d = await open();
+  if (id) await d.put("meta", id, "activePolicy");
+  else await d.delete("meta", "activePolicy");
 }
