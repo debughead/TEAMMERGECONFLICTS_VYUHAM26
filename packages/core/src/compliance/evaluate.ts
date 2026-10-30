@@ -5,7 +5,7 @@
 import { rectsForRange, type TextLayer } from "../extract/textLayer.ts";
 import type { FindingCollector } from "../pipeline/findings.ts";
 import type { Finding, Rect, Severity, Verdict } from "../schemas.ts";
-import { findAmounts, findInternalLinks, findLabelValues, findPattern, findSecrets, findTerms, hasLabel, type TextHit } from "./detect.ts";
+import { findAmounts, findInternalLinks, findLabelValues, findMarkings, findPattern, findSecrets, findTerms, hasLabel, type TextHit } from "./detect.ts";
 import { compileSafe } from "./safeRegex.ts";
 import type { ComplianceItem, ComplianceReport, Destination, LoadedPolicy, PolicyAction, PolicyRule, Signal, Target } from "./schema.ts";
 
@@ -79,6 +79,13 @@ export function applyPolicy(run: PolicyRun, layers: TextLayer[], out: FindingCol
   }
 
   const items = [...best.values()];
+  // "Remove" is a requirement: when this file type can't remove an item (Word/Excel body text, D-003), the
+  // file can't be shared as it is. Blocking points the user to exporting to PDF, where it can be removed.
+  if (!blockedBy) {
+    const byId = new Map(out.findings.map((f) => [f.id, f]));
+    const stuck = items.find((i) => i.action === "remove" && byId.get(i.findingId)?.redactable === false);
+    if (stuck) blockedBy = { ruleId: stuck.ruleId, title: stuck.title, clause: stuck.clause };
+  }
   const verdictFloor: Verdict = blockedBy ? "block" : items.some((i) => i.action === "remove" || i.action === "review") ? "warn" : "allow";
   return { policy: { name: policy.name, version: policy.version, sha256 }, destination: run.destination, matchedRules, items, verdictFloor, blockedBy };
 }
@@ -92,11 +99,12 @@ export function stricter(a: Verdict, b: Verdict): Verdict {
 /** A short, value-free description of why a rule matched, or null if none of its signals did. */
 function firstSignal(signals: Signal[], text: string, present: Set<Finding["type"]>, dictionaries: Record<string, string[]>): string | null {
   for (const s of signals) {
-    if ("keywords" in s) { const k = s.keywords.find((t) => findTerms(text, [t]).length); if (k) return `mentions "${k}"`; }
+    // One pass over the document for the whole list (not one per keyword); names the first one found.
+    if ("keywords" in s) { const k = findTerms(text, s.keywords)[0]?.term; if (k) return `mentions "${k}"`; }
     else if ("labels" in s) { const l = s.labels.find((t) => hasLabel(text, t)); if (l) return `has a "${l}" field`; }
     else if ("findings" in s) { const t = s.findings.find((x) => present.has(x)); if (t) return `contains a ${t.replace("_", " ")}`; }
     else if ("dictionary" in s) { if (findTerms(text, dictionaries[s.dictionary] ?? []).length) return `mentions a term from "${s.dictionary}"`; }
-    else if ("markings" in s) { const m = s.markings.find((t) => findTerms(text, [t]).length); if (m) return `is marked "${m}"`; }
+    else if ("markings" in s) { const m = findMarkings(text, s.markings)[0]?.term; if (m) return `is marked "${m}"`; }
     else if ("pattern" in s) { const c = compileSafe(s.pattern); if (c.ok && findPattern(text, c.regex).length) return "matches a pattern in the policy"; }
   }
   return null;

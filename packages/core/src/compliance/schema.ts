@@ -67,7 +67,9 @@ export const CompliancePolicy = z.strictObject({
   internalDomains: z.array(
     z.string().trim().toLowerCase()
       .regex(/^(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.?$/, "must be a host name like acme.com or *.acme.com")
-      .transform((d) => d.replace(/^\*\./, "").replace(/\.$/, "")),
+      .transform((d) => d.replace(/^\*\./, "").replace(/\.$/, ""))
+      // "com" alone would make every .com site count as inside the company.
+      .refine((d) => d.includes("."), "must be the company's own domain like acme.com, not just a top-level domain like com"),
   ).max(200).default([]),
   dictionaries: z.record(DictName, z.array(Term).min(1).max(2000)).default({}),
   rules: z.array(PolicyRule).min(1).max(100),
