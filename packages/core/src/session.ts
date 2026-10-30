@@ -1,5 +1,6 @@
 // In-worker scan sessions. Raw values live here and nowhere else (CLAUDE.md product rules).
 import type { AiLogEntry } from "./ai/run.ts";
+import type { ComplianceReport } from "./compliance/schema.ts";
 import type { FileType, Finding } from "./schemas.ts";
 
 export interface Session {
@@ -15,6 +16,8 @@ export interface Session {
   orientation: number;
   /** Masked AI requests made during the scan (placeholders only). */
   aiLog: AiLogEntry[];
+  /** What the company policy decided, when one was active (D-039). */
+  compliance: ComplianceReport | null;
   createdAt: number;
 }
 

@@ -1,8 +1,10 @@
 // Main-thread handle to the engine worker. A scan that runs past the limit terminates the worker
 // (the only reliable way to stop WASM), and a fresh one is started for the next file.
 import * as Comlink from "comlink";
-import { LIMITS, type AuditEvent, type AuditInput, type ChainCheck, type RedactOptions, type RedactResult, type ScanResult } from "@redactguard/core";
-import type { EngineApi, ScanRequest } from "./worker.ts";
+import { LIMITS, type AuditEvent, type AuditInput, type ChainCheck, type ComplianceReport, type RedactOptions, type RedactResult, type ScanResult } from "@redactguard/core";
+import type { AddPolicyResult, EngineApi, PolicySummary, ScanRequest } from "./worker.ts";
+
+export type { AddPolicyResult, PolicySummary } from "./worker.ts";
 
 let worker: Worker | null = null;
 let remote: Promise<Comlink.Remote<EngineApi>> | null = null;
@@ -65,3 +67,11 @@ export const auditCheck = (): Promise<ChainCheck> => engine().then((e) => e.audi
 /** Health check for the self-test: resolves "pong" once the worker is up. */
 export const pingEngine = (): Promise<string> => withTimeout(engine().then((e) => e.ping()), 10_000);
 export const auditLog = (input: AuditInput): Promise<void> => engine().then((e) => e.audit(input));
+
+// ---------- company policies (D-039) ----------
+export const complianceFor = (scanId: string): Promise<ComplianceReport | null> => engine().then((e) => e.compliance(scanId));
+export const policies = (): Promise<{ active: string | null; list: PolicySummary[] }> => engine().then((e) => e.policies());
+export const addPolicy = (text: string): Promise<AddPolicyResult> => engine().then((e) => e.addPolicy(text) as Promise<AddPolicyResult>);
+export const activatePolicy = (id: string | null): Promise<void> => engine().then((e) => e.activatePolicy(id));
+export const removePolicy = (id: string): Promise<void> => engine().then((e) => e.removePolicy(id));
+export const policyText = (id: string): Promise<string | null> => engine().then((e) => e.policyText(id));

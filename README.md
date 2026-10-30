@@ -31,6 +31,7 @@ Without `pnpm models` everything still works, but OCR falls back to Tesseract, w
 - [`docs/GUIDE.md`](docs/GUIDE.md): feature-by-feature build guide
 - [`docs/DECISIONS.md`](docs/DECISIONS.md): decision log
 - [`docs/PROGRESS.md`](docs/PROGRESS.md): build status
+- [`docs/POLICY.md`](docs/POLICY.md): writing a company policy (JSON format)
 - [`CLAUDE.md`](CLAUDE.md): working rules for Claude Code in this repo
 
 Built for problem statement AF-13 (Privacy Leakage Detection and Secure Redaction).

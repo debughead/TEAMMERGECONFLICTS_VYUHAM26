@@ -3,6 +3,7 @@
 import { z } from "zod";
 // The schemas-only entry: importing the main entry would pull MuPDF/WASM into every web page.
 import { ScanContext, ScanResult, VerifyReport } from "@redactguard/core/schemas";
+import { ComplianceReport, Destination, MAX_POLICY_BYTES } from "@redactguard/core/compliance";
 
 /** 15 MB file cap (LIMITS.maxBytes.extension) → ~20 MB of base64, well under Chrome's 64 MiB message limit. */
 const B64 = z.string().max(21 * 1024 * 1024);
@@ -20,6 +21,8 @@ export const ToBackground = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("panel-redact"), tabId: z.int(), scanId: z.string(), selectedIds: z.array(z.string()) }),
   /** From the card: the user finished with this file (status shown in the side panel). */
   z.strictObject({ type: z.literal("status"), scanId: z.string(), status: z.enum(["safe-uploaded", "original-uploaded", "cancelled"]) }),
+  /** From the side panel: a company policy was turned on or off (written to the audit log, D-039). */
+  z.strictObject({ type: z.literal("policy-change"), detail: z.string().max(300) }),
 ]);
 
 /** Background → content script. */
@@ -41,15 +44,38 @@ export const Settings = z.strictObject({
 export type Settings = z.infer<typeof Settings>;
 export const DEFAULT_SETTINGS: Settings = { mode: "ask", aiOn: false, aiKey: "", trusted: [] };
 
+/** The company policy in chrome.storage.local ("policy"): the exact JSON plus what lists show (D-039). */
+export const StoredPolicy = z.strictObject({
+  text: z.string().max(MAX_POLICY_BYTES),
+  name: z.string(),
+  version: z.string(),
+  sha256: z.string(),
+  internalDomains: z.array(z.string()),
+  rules: z.array(z.strictObject({ id: z.string(), title: z.string(), clause: z.string(), outside: z.string(), inside: z.string() })),
+});
+export type StoredPolicy = z.infer<typeof StoredPolicy>;
+
+/** "inside" when the site's host is one of the company's domains or a subdomain of one. */
+export function destinationOf(p: StoredPolicy | null, host: string): Destination {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return p && p.internalDomains.some((d) => h === d || h.endsWith(`.${d}`)) ? "inside" : "outside";
+}
+
 /** Background → offscreen. The offscreen document only has chrome.runtime, so settings travel along. */
 export const ToOffscreen = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("offscreen-scan"), b64: B64, context: ScanContext, trustedSite: z.boolean(), aiKey: z.string().optional() }),
+  z.strictObject({
+    type: z.literal("offscreen-scan"), b64: B64, context: ScanContext, trustedSite: z.boolean(), aiKey: z.string().optional(),
+    policyText: z.string().max(MAX_POLICY_BYTES).optional(), destination: Destination.optional(),
+  }),
   z.strictObject({ type: z.literal("offscreen-redact"), scanId: z.string(), selectedIds: z.array(z.string()), domain: z.string() }),
-  z.strictObject({ type: z.literal("offscreen-audit"), action: z.enum(["override", "trust_site"]), domain: z.string(), detail: z.string().max(500), fileSha256: z.string().nullable() }),
+  z.strictObject({ type: z.literal("offscreen-audit"), action: z.enum(["override", "trust_site", "policy_change"]), domain: z.string(), detail: z.string().max(500), fileSha256: z.string().nullable() }),
 ]);
 export type ToOffscreen = z.infer<typeof ToOffscreen>;
 
-export const ScanReply = z.union([z.strictObject({ ok: z.literal(true), result: ScanResult }), z.strictObject({ ok: z.literal(false), error: z.string() })]);
+export const ScanReply = z.union([
+  z.strictObject({ ok: z.literal(true), result: ScanResult, compliance: ComplianceReport.nullable() }),
+  z.strictObject({ ok: z.literal(false), error: z.string() }),
+]);
 export type ScanReply = z.infer<typeof ScanReply>;
 
 export const RedactReply = z.union([
