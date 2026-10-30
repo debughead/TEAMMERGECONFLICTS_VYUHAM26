@@ -176,14 +176,27 @@ describe("audit chain tamper evidence", () => {
     const store = memoryAuditStore();
     const key = await generateAuditKey();
     for (let i = 0; i < k; i++) await appendAudit(store, key, { origin: "weblab", action: "scan", detail: `row ${i}` });
-    return store;
+    return Object.assign(store, { key });
   };
+  // The rows alone can't show truncation (a shortened log is a valid shorter log), so these checks pass
+  // the signed head that is stored apart from the rows (D-043).
   it("deleting the newest row is detected", async () => {
     const store = await build(3);
-    expect((await verifyChain(store.rows.slice(0, 2))).ok).toBe(false);
+    expect((await verifyChain(store.rows.slice(0, 2), { head: store.lastHead, key: store.key })).ok).toBe(false);
   });
   it("wiping the whole log is detected", async () => {
-    expect((await verifyChain([])).ok).toBe(false);
+    const store = await build(3);
+    expect((await verifyChain([], { head: store.lastHead, key: store.key })).ok).toBe(false);
+  });
+  it("an intact log with its head passes, and a fresh install (no rows, no head) is fine", async () => {
+    const store = await build(3);
+    expect(await verifyChain(store.rows, { head: store.lastHead, key: store.key })).toEqual({ ok: true, count: 3, firstBroken: null });
+    expect((await verifyChain([], { head: null })).ok).toBe(true);
+  });
+  it("a head rewritten to match a shortened log is caught by its signature", async () => {
+    const store = await build(3);
+    const head = { ...store.lastHead!, seq: 1, rowHash: store.rows[1]!.rowHash };
+    expect((await verifyChain(store.rows.slice(0, 2), { head, key: store.key })).ok).toBe(false);
   });
   it("deleting a middle row is detected", async () => {
     const store = await build(3);

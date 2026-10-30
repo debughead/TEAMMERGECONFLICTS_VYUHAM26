@@ -26,14 +26,26 @@ export interface NerMatch {
 const NAME_LABEL = /\b(?:name|account holder|holder|patient(?: name)?|employee(?: name)?|customer(?: name)?|applicant|beneficiary|father'?s name|mother'?s name|spouse|nominee|s\/o|d\/o|w\/o|c\/o)\s*[:.-]?[ \t]*/gi;
 const NAME_VALUE = /[A-Z][A-Za-z'.-]*(?:[ \t]+[A-Z][A-Za-z'.-]*){0,3}/y;
 const NAME_STOPWORDS = new Set(["No", "Number", "Date", "Of", "The", "Bank", "Account", "Address", "Details", "ID", "Type"]);
+/** Words of the field headings printed on cards and forms; a "name" made only of these is the next heading. */
+const FIELD_HEADING_WORDS = new Set([
+  "signature", "sign", "address", "date", "of", "birth", "dob", "year", "gender", "sex", "male", "female", "father", "father's",
+  "fathers", "mother", "mother's", "husband", "husband's", "name", "photo", "photograph", "issue", "valid", "until", "upto",
+  "nationality", "place", "blood", "group", "permanent", "account", "number", "card", "no", "government", "india",
+  "income", "tax", "department", "mobile", "phone", "email", "pin", "code", "relation", "guardian", "holder", "occupation",
+]);
 
-const PIN = /\b[1-9]\d{2}[ ]?\d{3}\b/g;
+const PIN = /\b[1-9]\d{2}[ -]?\d{3}\b/g;
 const ADDRESS_LABEL = /\b(?:address|addr|residence|resident of|permanent address|correspondence address)\s*[:.-]?[ \t]*/i;
 const ADDRESS_CUE = /\b(?:house|flat|door|plot|h\.?\s?no|road|rd\.?|street|st\.?|lane|nagar|colony|layout|sector|block|apartment|apt|floor|near|opp\.?|post|p\.?o\.?|dist(?:rict)?|taluk|tehsil|village|city|pin(?:code)?|s\/o|d\/o|w\/o|c\/o|andhra pradesh|arunachal pradesh|assam|bihar|chhattisgarh|goa|gujarat|haryana|himachal pradesh|jharkhand|karnataka|kerala|madhya pradesh|maharashtra|manipur|meghalaya|mizoram|nagaland|odisha|punjab|rajasthan|sikkim|tamil nadu|telangana|tripura|uttar pradesh|uttarakhand|west bengal|delhi|chandigarh|puducherry|ladakh|jammu|kashmir)\b/i;
 const MAX_ADDRESS_LINES = 4;
 
 const SALARY_LABEL = /\b(?:salary|net pay|gross pay|gross salary|take[- ]home|ctc|basic pay|monthly income|annual income|income)\b/gi;
-const AMOUNT = /(?:₹|rs\.?|inr)?\s?\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|(?:₹|rs\.?|inr)\s?\d+(?:\.\d{1,2})?/iy;
+const AMOUNT = /(?:₹|rs\.?|inr)?\s?\d{1,3}(?:,\d{2,3})+(?:\.\d{1,2})?|(?:₹|rs\.?|inr)\s?\d+(?:\.\d{1,2})?|\d+(?:\.\d+)?\s?(?:lpa|lakhs?|lacs?|crores?|cr)\b/iy;
+/**
+ * A bare number ("Net Pay: 45000.00"). Weaker: only used when the window has no amount above, and it
+ * needs paise or 5+ digits so a year ("Salary for May 2026") isn't taken for the amount.
+ */
+const PLAIN_AMOUNT = /(?<![\w.,])(?:\d{4,7}\.\d{2}|\d{5,7})(?![\d.,]?\d)/y;
 const SALARY_WINDOW = 60;
 
 const MEDICAL_LABEL = /\b(?:diagnosis|diagnosed with|condition|prescription|rx|medical history|chief complaint|impression|findings)\s*[:.-]?[ \t]*/gi;
@@ -76,6 +88,7 @@ function cardFieldNames(text: string): NerMatch[] {
     const next = lines[k + 1]!;
     const raw = next.l.trim();
     if (raw.replace(/[^A-Za-z]/g, "").length < 2 || !CARD_NAME_VALUE.test(raw) || CARD_NAME_LABEL.test(raw)) continue;
+    if (raw.toLowerCase().split(/\s+/).every((w) => FIELD_HEADING_WORDS.has(w))) continue;
     const start = next.at + next.l.indexOf(raw);
     out.push({ type: "name", start, end: start + raw.length, raw, confidence: 0.85, needsContext: false });
   }
@@ -135,14 +148,16 @@ function salaries(text: string): NerMatch[] {
   for (const m of text.matchAll(SALARY_LABEL)) {
     const from = m.index! + m[0].length;
     const span = text.slice(from, from + SALARY_WINDOW);
-    for (let i = 0; i < span.length; i++) {
-      AMOUNT.lastIndex = from + i;
-      const a = AMOUNT.exec(text);
-      if (a && a.index < from + SALARY_WINDOW) {
-        const raw = a[0].trim();
-        const s = text.indexOf(raw, a.index);
-        out.push({ type: "salary", start: s, end: s + raw.length, raw, confidence: 0.8, needsContext: false });
-        break;
+    find: for (const [re, confidence] of [[AMOUNT, 0.8], [PLAIN_AMOUNT, 0.7]] as const) {
+      for (let i = 0; i < span.length; i++) {
+        re.lastIndex = from + i;
+        const a = re.exec(text);
+        if (a && a.index < from + SALARY_WINDOW) {
+          const raw = a[0].trim();
+          const s = text.indexOf(raw, a.index);
+          out.push({ type: "salary", start: s, end: s + raw.length, raw, confidence, needsContext: false });
+          break find;
+        }
       }
     }
   }
@@ -191,7 +206,7 @@ export function maskEntity(type: NerType, raw: string): string {
     // Fixed-length mask: star counts would reveal name lengths.
     case "name": return raw.split(/\s+/).map((t) => `${t[0] ?? ""}***`).join(" ");
     case "address": {
-      const pin = /[1-9]\d{2}\s?\d{3}\s*$/.exec(raw)?.[0].replace(/\s/g, "");
+      const pin = /[1-9]\d{2}[\s-]?\d{3}\s*$/.exec(raw)?.[0].replace(/[\s-]/g, "");
       return pin ? `[address, PIN ${pin.slice(0, 2)}XXXX]` : "[address]";
     }
     case "salary": return "[amount]";

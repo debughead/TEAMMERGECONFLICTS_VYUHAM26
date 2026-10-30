@@ -27,7 +27,7 @@ export { dropSession } from "./session.ts";
 export { tesseractEngine, type OcrEngine, type TesseractWorkerLike } from "./ocr/engine.ts";
 export { paddleEngine, withFallback, type OnnxSessionLike, type PaddleModels } from "./ocr/paddle.ts";
 export { AI_MODEL, type AiClient, type AiRequest } from "./ai/schema.ts";
-export { appendAudit, generateAuditKey, verifyChain, memoryAuditStore, type AuditStore, type AuditInput, type ChainCheck } from "./audit/chain.ts";
+export { appendAudit, generateAuditKey, verifyChain, memoryAuditStore, type AuditHead, type AuditStore, type AuditInput, type ChainCheck } from "./audit/chain.ts";
 
 /** Host-supplied capabilities; functions can't live in the zod-validated options. */
 export interface CoreDeps {

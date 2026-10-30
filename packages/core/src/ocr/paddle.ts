@@ -175,18 +175,27 @@ function toWords(lines: { text: string; conf: number; box: Box }[]): OcrWord[] {
 
 /** Uses `primary`, and `fallback` if the primary can't load or fails on an image. */
 export function withFallback(primary: () => Promise<OcrEngine>, fallback: () => Promise<OcrEngine>): OcrEngine {
+  let backup: Promise<OcrEngine> | null = null;
+  // Loaded at most once (Tesseract's model is large); a failed load is retried on the next image.
+  const loadBackup = () => (backup ??= fallback().catch((e: unknown) => { backup = null; throw e; }));
   let chosen: Promise<OcrEngine> | null = null;
-  let loaded: OcrEngine | null = null;
-  const pick = () => (chosen ??= primary().catch(() => fallback()).then((e) => (loaded = e)));
+  /** The engine that read the last image; its binarize setting is the one that applied. */
+  let used: OcrEngine | null = null;
+  const pick = () => (chosen ??= primary().catch(() => loadBackup()));
   return {
     // Known once the first image has been read (recognizeBest checks it after that first read).
-    get binarize() { return loaded?.binarize; },
+    get binarize() { return used?.binarize; },
     async recognize(png) {
       const engine = await pick();
       try {
-        return await engine.recognize(png);
+        const words = await engine.recognize(png);
+        used = engine;
+        return words;
       } catch {
-        return (await fallback()).recognize(png);
+        const other = await loadBackup();
+        const words = await other.recognize(png);
+        used = other;
+        return words;
       }
     },
   };

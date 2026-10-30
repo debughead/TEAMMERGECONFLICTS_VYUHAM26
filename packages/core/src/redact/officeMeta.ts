@@ -1,7 +1,8 @@
-// Office "clean" (D-003): blank personal metadata and remove comments. Body text, tracked changes
-// and hidden sheets are not rewritten; the UI advises exporting to PDF for those.
+// Office "clean" (D-003): blank personal metadata (core, app and custom properties), remove comments and
+// the saved preview thumbnail. Body text, tracked changes and hidden sheets are not rewritten; the UI
+// advises exporting to PDF for those.
 import type JSZip from "jszip";
-import { readPart } from "../extract/office.ts";
+import { isSensitivityLabel, readPart } from "../extract/office.ts";
 
 const EMPTY_CORE = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>`;
@@ -10,6 +11,8 @@ const APP_FIELDS_TO_DROP = ["Company", "Manager", "Application", "AppVersion", "
 const isCommentPart = (n: string) =>
   /^word\/(comments[^/]*|people)\.xml$/.test(n) ||
   /^xl\/(comments[^/]*\.xml|threadedComments\/.*|persons\/.*|drawings\/vmlDrawing[^/]*\.vml)$/.test(n);
+/** The preview picture saved with the file: an image of the first page as it was before cleaning. */
+const isThumbnail = (n: string) => /^docProps\/thumbnail\.[a-z]+$/i.test(n);
 
 export async function cleanOffice(zip: JSZip): Promise<Uint8Array<ArrayBuffer>> {
   if (zip.file("docProps/core.xml")) zip.file("docProps/core.xml", EMPTY_CORE);
@@ -20,7 +23,18 @@ export async function cleanOffice(zip: JSZip): Promise<Uint8Array<ArrayBuffer>> 
     zip.file("docProps/app.xml", cleaned);
   }
 
-  const removed = Object.keys(zip.files).filter(isCommentPart);
+  // Custom properties hold whatever the author's systems stored. Sensitivity labels stay (they say how
+  // the file must be handled); the part goes if nothing else is left in it.
+  const custom = await readPart(zip, "docProps/custom.xml");
+  let dropCustom = false;
+  if (custom) {
+    const kept = custom.replace(/<(?:[A-Za-z_][\w.-]*:)?property\s[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?property>/g,
+      (p) => (isSensitivityLabel(/\bname="([^"]*)"/.exec(p)?.[1] ?? "") ? p : ""));
+    if (/<(?:[A-Za-z_][\w.-]*:)?property\s/.test(kept)) zip.file("docProps/custom.xml", kept);
+    else dropCustom = true;
+  }
+
+  const removed = Object.keys(zip.files).filter((n) => isCommentPart(n) || isThumbnail(n) || (dropCustom && n === "docProps/custom.xml"));
   for (const n of removed) zip.remove(n);
   const removedTargets = new Set(removed.map((n) => n.split("/").pop()!));
 

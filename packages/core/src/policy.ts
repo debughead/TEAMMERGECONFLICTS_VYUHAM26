@@ -6,7 +6,7 @@ import type { ContextJudgement, Finding, FindingType, ScanContext, Verdict } fro
 import { HIDDEN_SOURCES } from "./score.ts";
 
 interface Rule {
-  /** Matched against field label + page title + domain (lower-cased). */
+  /** Matched against field label + page title (lower-cased). */
   when: RegExp;
   expects: FindingType[];
 }
@@ -16,7 +16,8 @@ export const EXPECTATION_RULES: readonly Rule[] = [
   { when: /\b(?:aadhaa?r|e-?kyc|kyc|uidai|identity proof|id proof|address proof)\b/, expects: ["aadhaar", "name", "address", "phone"] },
   { when: /\b(?:pan|income tax|itr|tax return|form 16)\b/, expects: ["pan", "name", "salary"] },
   { when: /\b(?:resume|cv|curriculum vitae|job|career|apply|application)\b/, expects: ["name", "phone", "email", "address"] },
-  { when: /\b(?:bank statement|account statement|statement)\b/, expects: ["account", "ifsc", "name", "address", "upi"] },
+  // Not a bare "statement": a job portal's "Statement of Purpose" isn't asking for bank details.
+  { when: /\b(?:bank statement|account statement|statement of account|bank account statement|e-?statement)\b/, expects: ["account", "ifsc", "name", "address", "upi"] },
   { when: /\b(?:cancelled cheque|cheque|bank details|bank account|ifsc|payout|salary account)\b/, expects: ["account", "ifsc", "name"] },
   { when: /\b(?:payslip|salary slip|pay slip|income proof|salary)\b/, expects: ["salary", "name", "pan", "account"] },
   { when: /\b(?:medical|prescription|insurance claim|health|hospital|lab report|clinic)\b/, expects: ["medical", "name", "phone", "address"] },
@@ -37,7 +38,9 @@ export interface PolicyInput {
 }
 
 export function ruleExpectations(context: ScanContext): FindingType[] | null {
-  const haystack = `${context.fieldLabel} ${context.pageTitle} ${context.domain}`.toLowerCase();
+  // The domain is left out (D-042): anyone can register free-aadhaar-update.xyz, and a word in it would
+  // make Aadhaar numbers "expected" there. Real sites name what they want in the field or the title.
+  const haystack = `${context.fieldLabel} ${context.pageTitle}`.toLowerCase();
   const hits = EXPECTATION_RULES.filter((r) => r.when.test(haystack));
   return hits.length ? [...new Set(hits.flatMap((r) => r.expects))] : null;
 }
