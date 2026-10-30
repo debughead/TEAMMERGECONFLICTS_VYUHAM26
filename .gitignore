@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+secrets/
+*.local
+.DS_Store
+public/vendor/
+apps/weblab/.selftest-result.json
+apps/extension/public/vendor/
+demo-sites/.last-result.json
+demo-sites/.trace.log
+apps/extension/dist-e2e/
+demo-sites/big-test.pdf
+.claude
+Claude.md

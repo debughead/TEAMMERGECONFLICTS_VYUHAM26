@@ -1,0 +1,85 @@
+%PDF-1.7
+%µ¶
+% Written by MuPDF 1.28.1
+
+1 0 obj
+<</Type/Catalog/Pages 2 0 R/Info<</Producer(MuPDF 1.28.1)>>>>
+endobj
+
+2 0 obj
+<</Type/Pages/Count 1/Kids[6 0 R]>>
+endobj
+
+3 0 obj
+<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>
+endobj
+
+4 0 obj
+<</Font<</F1 3 0 R>>>>
+endobj
+
+5 0 obj
+<</Length 886>>
+stream
+BT /F1 14 Tf 72 750 Td (FAKE BANK OF TESTING - SPECIMEN STATEMENT \(FAKE DATA\)) Tj ET
+BT /F1 11 Tf 72 720 Td (Account Holder: Arjun Testkumar) Tj ET
+BT /F1 11 Tf 72 702 Td (Address: House No 12, Test Nagar, Kochi, Kerala 682001) Tj ET
+BT /F1 11 Tf 72 684 Td (Account No: ) Tj ET
+BT /F1 11 Tf 140 684 Td (000011112222) Tj ET
+BT /F1 11 Tf 72 666 Td (IFSC: TEST0001234) Tj ET
+BT /F1 11 Tf 72 648 Td (Aadhaar: ) Tj ET
+BT /F1 11 Tf 122 648 Td (4987 1234 5679) Tj ET
+BT /F1 11 Tf 72 630 Td (Mobile: ) Tj ET
+BT /F1 11 Tf 116 630 Td (9876543210) Tj ET
+BT /F1 10 Tf 72 600 Td (Date        Description                              Amount) Tj ET
+BT /F1 10 Tf 72 585 Td (01-10-2026  UPI test.user@okaxis                    1,500.00) Tj ET
+BT /F1 10 Tf 72 570 Td (05-10-2026  Salary credit TESTCORP PVT LTD          85,000.00) Tj ET
+q 0 0 0 rg 136 680 90 15 re f Q
+q 0 0 0 rg 118 644 100 15 re f Q
+
+endstream
+endobj
+
+6 0 obj
+<</Type/Page/MediaBox[0 0 612 792]/Rotate 0/Resources 4 0 R/Contents 5 0 R/Parent 2 0 R/Annots[7 0 R]>>
+endobj
+
+7 0 obj
+<</Type/Annot/Subtype/Redact/P 6 0 R/F 4/Rect[114 626 180 641]/AP<</N 8 0 R>>>>
+endobj
+
+8 0 obj
+<</Type/XObject/Subtype/Form/BBox[114 626 180 641]/Matrix[1 0 0 1 0 0]/Length 51>>
+stream
+1 0 0 RG
+115 627 m
+179 627 l
+179 640 l
+115 640 l
+s
+
+endstream
+endobj
+
+9 0 obj
+<</Author(HR-Dept-Fake)/Creator(FakeWord 2026)>>
+endobj
+
+xref
+0 10
+0000000000 65535 f 
+0000000042 00000 n 
+0000000120 00000 n 
+0000000172 00000 n 
+0000000261 00000 n 
+0000000300 00000 n 
+0000001236 00000 n 
+0000001356 00000 n 
+0000001452 00000 n 
+0000001620 00000 n 
+
+trailer
+<</Size 10/Info 9 0 R/Root 1 0 R>>
+startxref
+1685
+%%EOF

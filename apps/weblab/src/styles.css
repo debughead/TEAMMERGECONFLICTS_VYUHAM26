@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Leak X-Ray: hidden text glows red through the black box. */
+.xray-hidden {
+  border: 2px solid rgb(239 68 68);
+  background: rgb(239 68 68 / 0.25);
+  box-shadow: 0 0 12px 3px rgb(239 68 68 / 0.7);
+  animation: xray-pulse 1.6s ease-in-out infinite;
+}
+@keyframes xray-pulse { 50% { box-shadow: 0 0 20px 6px rgb(239 68 68 / 0.9); } }

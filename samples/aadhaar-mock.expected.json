@@ -1,0 +1,18 @@
+{
+  "file": "aadhaar-mock.png",
+  "description": "Fake Aadhaar-style card image (no text layer); needs OCR.",
+  "expectedFindings": [
+    {
+      "type": "aadhaar",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "name",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}

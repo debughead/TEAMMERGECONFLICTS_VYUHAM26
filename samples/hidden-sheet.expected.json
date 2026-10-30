@@ -1,0 +1,30 @@
+{
+  "file": "hidden-sheet.xlsx",
+  "description": "Excel file: Aadhaar on a hidden sheet, phone on a hidden row, author metadata.",
+  "expectedFindings": [
+    {
+      "type": "aadhaar",
+      "source": "hidden_office",
+      "page": null,
+      "min": 1
+    },
+    {
+      "type": "phone",
+      "source": "hidden_office",
+      "page": null,
+      "min": 1
+    },
+    {
+      "type": "hidden_content",
+      "source": "hidden_office",
+      "page": null,
+      "min": 2
+    },
+    {
+      "type": "metadata",
+      "source": "metadata",
+      "page": null,
+      "min": 1
+    }
+  ]
+}

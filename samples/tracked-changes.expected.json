@@ -1,0 +1,36 @@
+{
+  "file": "tracked-changes.docx",
+  "description": "Word file: PAN in a tracked deletion, phone in hidden (vanish) text, Aadhaar in a comment, author metadata.",
+  "expectedFindings": [
+    {
+      "type": "pan",
+      "source": "hidden_office",
+      "page": null,
+      "min": 1
+    },
+    {
+      "type": "phone",
+      "source": "hidden_office",
+      "page": null,
+      "min": 1
+    },
+    {
+      "type": "aadhaar",
+      "source": "hidden_office",
+      "page": null,
+      "min": 1
+    },
+    {
+      "type": "hidden_content",
+      "source": "hidden_office",
+      "page": null,
+      "min": 2
+    },
+    {
+      "type": "metadata",
+      "source": "metadata",
+      "page": null,
+      "min": 1
+    }
+  ]
+}

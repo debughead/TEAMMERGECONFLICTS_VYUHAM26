@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
+    "jsx": "react-jsx",
+    "types": ["vite/client", "chrome"]
+  },
+  "include": ["src", "manifest.config.ts", "vite.config.ts", "../weblab/src/engine", "../weblab/src/audit"]
+}

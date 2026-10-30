@@ -1,0 +1,24 @@
+{
+  "file": "scanned-kyc.pdf",
+  "description": "Image-only PDF page (no text layer); needs OCR. Contains name, Aadhaar and phone as pixels.",
+  "expectedFindings": [
+    {
+      "type": "aadhaar",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "phone",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "name",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}

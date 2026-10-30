@@ -1,0 +1,18 @@
+{
+  "file": "prompt-injection.pdf",
+  "description": "Contains an instruction aimed at AI reviewers; deterministic findings must be unaffected.",
+  "expectedFindings": [
+    {
+      "type": "aadhaar",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "pan",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}

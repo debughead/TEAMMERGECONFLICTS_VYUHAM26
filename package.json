@@ -1,0 +1,15 @@
+{
+  "name": "redactguard",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "samples": "pnpm --filter @redactguard/core samples",
+    "demo": "node demo-sites/serve.mjs"
+  }
+}

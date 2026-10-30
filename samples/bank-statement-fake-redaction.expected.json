@@ -1,0 +1,54 @@
+{
+  "file": "bank-statement-fake-redaction.pdf",
+  "description": "Bank statement where account number and Aadhaar are covered by drawn black boxes; phone has an unapplied Redact annotation; Author metadata set.",
+  "expectedFindings": [
+    {
+      "type": "account",
+      "source": "under_black_box",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "aadhaar",
+      "source": "under_black_box",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "phone",
+      "source": "unapplied_annot",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "ifsc",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "upi",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "name",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "address",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "metadata",
+      "source": "metadata",
+      "page": null,
+      "min": 1
+    }
+  ]
+}

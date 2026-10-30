@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8" /><title>QuickJobs (demo) – Apply</title>
+<style>body{font:15px system-ui;max-width:640px;margin:40px auto;color:#0f172a}label{display:block;margin:16px 0 6px;font-weight:600}.box{border:2px dashed #94a3b8;border-radius:10px;padding:24px;text-align:center;color:#475569}</style></head>
+<body>
+  <h1>QuickJobs</h1><p>Demo job portal for RedactGuard testing. Fake data only.</p>
+  <form onsubmit="event.preventDefault(); alert('Application sent (demo)')">
+    <label for="name">Full name</label><input id="name" name="name" />
+    <label for="cv">Upload resume</label><input id="cv" type="file" accept=".pdf,.jpg,.png,.docx" />
+    <div class="box" id="drop">or drop your documents here</div>
+    <p><button type="submit">Apply</button></p>
+  </form>
+  <h3>What this site received</h3><ul id="received"></ul>
+  <script>document.getElementById("drop").addEventListener("drop",(e)=>{e.preventDefault();document.getElementById("received").insertAdjacentHTML("beforeend","<li>Received a dropped file</li>")});document.getElementById("drop").addEventListener("dragover",(e)=>e.preventDefault());</script>
+  <script src="/receiver.js"></script>
+</body></html>

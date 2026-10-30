@@ -1,0 +1,12 @@
+{
+  "file": "dark-image-over-text.pdf",
+  "description": "PAN covered by a pasted black image instead of a drawn box.",
+  "expectedFindings": [
+    {
+      "type": "pan",
+      "source": "under_black_box",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}
