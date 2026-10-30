@@ -75,6 +75,7 @@ function textScore(words: OcrWord[]): number {
  */
 export async function recognizeBest(engine: OcrEngine, pix: mupdf.Pixmap): Promise<OcrWord[]> {
   const raw = await engine.recognize(pix.asPNG());
+  if (engine.binarize === false) return raw;
   const bin = binarize(pix);
   const thr = (await engine.recognize(bin.pix.asPNG())).map((w) => ({ ...w, bbox: w.bbox.map((v) => v * bin.scale) as OcrWord["bbox"] }));
   return textScore(thr) > textScore(raw) ? thr : raw;

@@ -26,6 +26,15 @@ const LABEL: Record<string, string> = {
   salary: "Salary", gps: "GPS location", metadata: "File property", hidden_content: "Hidden text", old_version: "Earlier version", other: "Detail",
 };
 export const labelOf = (f: Finding) => LABEL[f.type] ?? f.type;
+
+/**
+ * Label and value as a row shows them. File properties arrive as "Author: A***r"; the property name is
+ * the label ("Author"), not the generic "File property".
+ */
+export function displayOf(f: Finding): { label: string; value: string } {
+  const m = f.type === "metadata" || f.type === "other" ? /^([^:]{1,40}): (.+)$/.exec(f.masked) : null;
+  return m ? { label: m[1]!, value: m[2]! } : { label: labelOf(f), value: f.masked };
+}
 /** Mid-sentence form: lower-case except proper nouns and acronyms ("Aadhaar", "PAN", "IFSC", "UPI"). */
 export const inSentence = (label: string) => (/^(Aadhaar|PAN|IFSC|UPI|GPS)/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1));
 
@@ -40,11 +49,75 @@ export function defaultSelection(r: ScanResult): Set<string> {
 
 export const isNeeded = (r: ScanResult, f: Finding) => (r.context?.neededTypes ?? []).includes(f.type) && !f.autoCleanable;
 
-/** The receipt line: what the site will get after the selected items are removed. */
-export function receipt(r: ScanResult, selected: Set<string>): { keeps: string[]; removed: number } {
-  const keeps = [...new Set(listable(r).filter((f) => !selected.has(f.id) && groupOf(f) !== "file").map((f) => inSentence(labelOf(f))))];
-  return { keeps, removed: [...selected].length };
+/**
+ * One row per distinct value: a statement prints the same UPI ID, card or phone number in several
+ * places, and each is its own finding (so each copy can be kept or removed). The list shows the value
+ * once; ticking the row selects every copy.
+ */
+export interface Row {
+  key: string;
+  ids: string[];
+  /** Representative finding (all share type, source and masked value). */
+  f: Finding;
+  pages: number[];
 }
+
+export function rowsOf(r: ScanResult, group: GroupId): Row[] {
+  const rows = new Map<string, Row>();
+  for (const f of listable(r)) {
+    if (groupOf(f) !== group) continue;
+    const key = `${f.type}|${f.source}|${f.masked}|${f.redactable}`;
+    const row = rows.get(key);
+    if (!row) rows.set(key, { key, ids: [f.id], f, pages: f.page === null ? [] : [f.page] });
+    else {
+      row.ids.push(f.id);
+      if (f.page !== null && !row.pages.includes(f.page)) row.pages.push(f.page);
+    }
+  }
+  return [...rows.values()];
+}
+
+export const allRows = (r: ScanResult): Row[] => GROUPS.flatMap((g) => rowsOf(r, g.id));
+
+export function rowState(row: Row, selected: Set<string>): "on" | "off" | "mixed" {
+  const n = row.ids.filter((id) => selected.has(id)).length;
+  return n === 0 ? "off" : n === row.ids.length ? "on" : "mixed";
+}
+
+/** Selects or clears every copy in the row; returns a new set. */
+export function toggleRow(row: Row, selected: Set<string>): Set<string> {
+  const next = new Set(selected);
+  const on = rowState(row, selected) !== "on";
+  for (const id of row.ids) on ? next.add(id) : next.delete(id);
+  return next;
+}
+
+/** Reasons that only restate the row's label; only real explanations are shown. */
+const BOILERPLATE = /(is visible in the document|is readable in the image|is stored in the file's metadata|tag is stored in its metadata)$/;
+
+/** The row's second line: only what helps the decision (why it's risky, where, whether the page needs it). */
+export function rowNote(r: ScanResult, row: Row): string | null {
+  // Whether the page needs it is said once, in the verdict ("left unticked"), not on every row.
+  const bits: string[] = [];
+  const reason = row.f.reason.replace(/ \(\d+ places on this page\)$/, "");
+  if (!BOILERPLATE.test(reason)) bits.push(reason);
+  if (row.ids.length > 1) bits.push(`appears ${row.ids.length} times`);
+  if (r.pageCount > 1 && row.pages.length) bits.push(`page${row.pages.length > 1 ? "s" : ""} ${row.pages.map((p) => p + 1).join(", ")}`);
+  if (!row.f.redactable) bits.push("can't be removed from this file type here");
+  if (!bits.length) return null;
+  const text = bits.join("; ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** The receipt line: what the site will get after the selected rows are removed, and how many rows go. */
+export function receipt(r: ScanResult, selected: Set<string>): { keeps: string[]; removed: number } {
+  const rows = allRows(r);
+  const keeps = [...new Set(rows.filter((row) => rowState(row, selected) !== "on" && groupOf(row.f) !== "file").map((row) => inSentence(labelOf(row.f))))];
+  return { keeps, removed: rows.filter((row) => rowState(row, selected) === "on").length };
+}
+
+/** The one name for the main action, everywhere it appears. */
+export const actionLabel = (removed: number) => `Remove ${removed} and upload`;
 
 export const identityKit = (r: ScanResult) => r.findings.find((f) => f.type === "identity_kit") ?? null;
 /** "name + Aadhaar + address" → "Your name, Aadhaar and address are". */

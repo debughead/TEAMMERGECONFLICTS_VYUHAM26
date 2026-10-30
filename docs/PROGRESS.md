@@ -2,7 +2,7 @@
 
 Claude Code keeps this file current. Humans can edit it too; Claude reads it at the start of every task and on `/status`.
 
-**Last updated:** 2026-10-30 · **Overall:** core complete (165 tests); Web Lab and extension both work end to end in headless Brave; all 6 spikes passed
+**Last updated:** 2026-10-31 · **Overall:** Phase 0 and 0b done; PP-OCR integrated (270/271 core tests; 1 known synthetic QR test fails)
 
 ## Spikes (hours 0–2): must pass before building on them
 
@@ -27,6 +27,12 @@ Claude Code keeps this file current. Humans can edit it too; Claude reads it at 
 - (none)
 
 ## Done
+
+- 2026-10-31 Phase 0 (D-034): off-page text, switched-off layers, invisible (same-colour/tiny) text, form values, comments, and GPS/camera metadata in photos inside PDFs are all detected, removed and checked by verify(). `samples/` renamed and tests updated; new samples `bank-statement-exposed.pdf` and `photo-with-gps.pdf`
+- 2026-10-31 PP-OCR (D-038): main OCR engine with Tesseract fallback; the user's real PAN photo now yields the PAN, name, father's name and date of birth. `pnpm models` fetches the models. New sample `pan-card-photo.jpg`
+- 2026-10-31 Phase 0b (D-037): whiteout/grey/picture covers, clipped text and invisible text detected, removed and verified, with pixel confirmation; MuPDF Shade-callback crash fixed. Spike S7 (PP-OCR) passed
+- 2026-10-31 Extension region map for GPS, click-to-load, CSP `img-src` tightened (D-036)
+- 2026-10-31 Card and side panel (D-035): one row per value, one action name, redaction-bar selection, Settings folded away; "AC" account labels
 
 - 2026-10-30: photo forensics (D-030): bar check (opaque / see-through / too thin), ID card recognition, QR locator (real photo only, see blockers), rotation-aware mapping for image-only PDF pages, stronger verify; 180/183 tests
 - 2026-10-30: RedactGuard icon (shield + page + redaction bar): extension icons 16/32/48/128 + toolbar, card and side-panel headers, Web Lab favicon/logo; generator `packages/core/scripts/makeIcons.ts`
@@ -59,14 +65,16 @@ Claude Code keeps this file current. Humans can edit it too; Claude reads it at 
 
 ## Next up
 
+0. Phase 1 (compliance policy engine): plan drafted, waiting for the user's go
+1. Web Lab map: make it click-to-load like the extension (D-036); today it requests tiles as soon as GPS is shown
+2. Web Lab finding list: apply the same one-row-per-value grouping as the extension (D-035)
+
 1. Manual click-through in a visible browser: card buttons (safe version, upload anyway, trust site), side panel from the card (S1), Web Lab X-Ray and map
 2. Decide whether to add `connect-src 'self' https://api.anthropic.com` to the extension CSP (needs approval)
 3. Pitch polish: demo script rehearsal, backup video
 3. Spikes 1, 3, 4, 5, 6 need the extension/browser (Phase 3)
 
 ## Blockers / waiting on a human
-- **OCR on unredacted ID-card photos (D-032), 2026-10-30.** The fixes (D-031 cover 15%, D-032 local threshold) make the user's PAN photo come out as "PAN card" (high, warn), but the PAN number, name and date of birth are not extracted. Two attempts made. Options for the user: (A) add a sparse-text Tesseract pass (`psm 11`, needs the tesseract.js parameter API verified first); (B) when an ID card is recognised but no ID number is read, raise it to critical and pre-select the whole card area for removal.
-- **`samples/bank-statement-fake-redaction.pdf` was renamed to `weak-redaction.pdf`** (by the user, 21:40). The golden, ai, audit and watermark tests load the old name, so 4 tests fail until the name is restored or the tests are updated.
 
 - 2026-10-30: hand-written QR locator (`detect/imageForensics.ts` `findQrCodes`) finds the QR on the user's real PAN photo but fails on synthetic QR images (3 tests in `test/imageForensics.test.ts`). Tried: (1) merge overlapping candidates + trim to dense texture, (2) standard finder tolerance (broke the real photo, reverted). Stopped per the two-attempt rule. Options: add jsQR (proper locator + decoder, previously declined) or keep iterating on the hand-written locator.
 

@@ -33,7 +33,7 @@ describe("AI off by default", () => {
 
 describe("what is sent", () => {
   it("contains no raw value from the document, only placeholders", async () => {
-    for (const bytes of [medicalPdf(), new Uint8Array(readFileSync(SAMPLES + "bank-statement-fake-redaction.pdf"))]) {
+    for (const bytes of [medicalPdf(), new Uint8Array(readFileSync(SAMPLES + "weak-redaction.pdf"))]) {
       const { client, requests } = recorder(noFindings);
       await scan(bytes, OPTS, { ai: client });
       expect(requests.length).toBeGreaterThan(0);

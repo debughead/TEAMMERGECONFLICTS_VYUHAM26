@@ -1,15 +1,18 @@
 // Turns detector matches on a text layer into display-safe Findings, keeping raw values aside
 // for verify(). Shared by PDF text, scanned-PDF OCR and image OCR.
-import type { HiddenReason } from "../detect/forensic.ts";
+import { HIDDEN_SOURCE, HIDDEN_TEXT, type HiddenReason } from "../detect/forensic.ts";
 import { findLocalEntities, maskEntity, type NerType } from "../detect/localNer.ts";
 import { findIds, maskForDisplay, type IdType } from "../detect/patterns.ts";
 import { charIndicesForRange, rectsForRange, type TextLayer } from "../extract/textLayer.ts";
 import type { Finding, FindingSource, Rect } from "../schemas.ts";
 import { findBars, findQrCodes, lumPlane } from "../detect/imageForensics.ts";
-import { recogniseIdCard } from "../detect/idCards.ts";
+import { findBirthDates, recogniseIdCard } from "../detect/idCards.ts";
 import { isAutoCleanable, severityFor } from "../score.ts";
 
 export type NewFinding = Omit<Finding, "id" | "severity" | "autoCleanable">;
+
+/** ~11 km: enough for a region-level map pin without revealing the exact spot. */
+export const coarseCoord = (v: number) => Math.round(v * 10) / 10;
 
 /** Comparable form for verify(): no whitespace/separators, upper-case. */
 export const normalizeForCompare = (s: string) => s.replace(/[\s\-_.,:;/]/g, "").toUpperCase();
@@ -41,7 +44,6 @@ export class FindingCollector {
   /** Finding id → value as it appears in the document, used to remove every copy. Worker-internal. */
   readonly raws = new Map<string, string[]>();
   private n = 0;
-
   /** `severity` overrides the type's default when a rule knows better (e.g. a QR code on an ID card). */
   add(f: NewFinding, values: string[], severity?: Finding["severity"]): Finding {
     const finding: Finding = { ...f, id: `f${++this.n}`, severity: severity ?? severityFor(f.type, f.source), autoCleanable: isAutoCleanable(f.type, f.source) };
@@ -72,18 +74,34 @@ export class FindingCollector {
 export function collectTextFindings(
   layer: TextLayer,
   out: FindingCollector,
-  opts: { baseSource: "text" | "ocr"; hidden?: (HiddenReason | null)[] },
+  opts: {
+    baseSource: "text" | "ocr" | "hidden_office";
+    hidden?: (HiddenReason | null)[];
+    /** Overrides the wording after the label (e.g. "is in a comment on the page"). */
+    reasonText?: string;
+    /** For text that isn't drawn on the page (comments): removal is structural, so no page areas. */
+    noRects?: boolean;
+  },
 ): { claimed: [number, number][] } {
   const claimed: [number, number][] = [];
-  const sourceFor = (start: number, end: number): FindingSource => {
+  const hiddenAt = (start: number, end: number): HiddenReason | null => {
     if (opts.hidden) {
       for (const ci of charIndicesForRange(layer, start, end)) {
         const r = opts.hidden[ci];
         if (r) return r;
       }
     }
-    return opts.baseSource;
+    return null;
   };
+  const sourceFor = (start: number, end: number): FindingSource => {
+    const h = hiddenAt(start, end);
+    return h ? HIDDEN_SOURCE[h] : opts.baseSource;
+  };
+  const whyFor = (start: number, end: number, source: FindingSource): string => {
+    const h = hiddenAt(start, end);
+    return h ? HIDDEN_TEXT[h] : opts.reasonText ?? REASON_TEXT[source];
+  };
+  const rectsFor = (start: number, end: number) => (opts.noRects ? [] : rectsForRange(layer, start, end));
   const detectorFor = (source: FindingSource, fallback: Finding["detector"]): Finding["detector"] =>
     source === "text" ? fallback : source === "ocr" ? "ocr" : "forensic";
 
@@ -91,9 +109,9 @@ export function collectTextFindings(
     const source = sourceFor(m.start, m.end);
     claimed.push([m.start, m.end]);
     out.add({
-      type: m.type, source, page: layer.index, rects: rectsForRange(layer, m.start, m.end),
+      type: m.type, source, page: layer.index, rects: rectsFor(m.start, m.end),
       masked: maskForDisplay(m.type, m.normalized),
-      reason: `${LABEL[m.type]} ${REASON_TEXT[source]}${m.checksumFailed ? " (read by OCR; check digit didn't match, so it may be misread)" : ""}`,
+      reason: `${LABEL[m.type]} ${whyFor(m.start, m.end, source)}${m.checksumFailed ? " (read by OCR; check digit didn't match, so it may be misread)" : ""}`,
       confidence: m.confidence, redactable: true, detector: detectorFor(source, "regex"),
     }, [m.normalized, m.raw]);
   }
@@ -104,10 +122,22 @@ export function collectTextFindings(
     const source = sourceFor(e.start, e.end);
     claimed.push([e.start, e.end]);
     out.add({
-      type: e.type, source, page: layer.index, rects: rectsForRange(layer, e.start, e.end),
-      masked: maskEntity(e.type, e.raw), reason: `${LABEL[e.type]} ${REASON_TEXT[source]}`,
+      type: e.type, source, page: layer.index, rects: rectsFor(e.start, e.end),
+      masked: maskEntity(e.type, e.raw), reason: `${LABEL[e.type]} ${whyFor(e.start, e.end, source)}`,
       confidence: e.confidence, redactable: true, detector: detectorFor(source, "local_ner"),
     }, [e.raw]);
+  }
+
+  // Dates of birth (next to a birth label only). "other" type: the shared contract has no date type.
+  for (const d of findBirthDates(layer.text)) {
+    if (claimed.some(([s, en]) => d.start < en && s < d.end)) continue;
+    const source = sourceFor(d.start, d.end);
+    claimed.push([d.start, d.end]);
+    out.add({
+      type: "other", source, page: layer.index, rects: rectsFor(d.start, d.end),
+      masked: "Date of birth: XX/XX/XXXX", reason: `Date of birth ${whyFor(d.start, d.end, source)}`,
+      confidence: 0.9, redactable: true, detector: detectorFor(source, "local_ner"),
+    }, [d.raw], "medium");
   }
   return { claimed };
 }

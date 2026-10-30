@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+/* One ink, quiet rules, verdict colours that carry meaning only, and true black reserved for
+   redaction: the panel's one visual signature is a value turning into a redaction bar. */
+@theme {
+  --color-ink: #17212c;
+  --color-muted: #586472;
+  --color-rule: #e1e6ec;
+  --color-wash: #f4f6f8;
+  --color-redact: #000000;
+  --color-stop: #b42318;
+  --color-stop-wash: #fdf2f1;
+  --color-caution: #8f4f00;
+  --color-caution-wash: #fdf6e8;
+  --color-clear: #1d7348;
+  --color-clear-wash: #eef7f1;
+}
+
+/* A selected value is shown as it will leave: redacted. The bar sweeps in from the left (the only
+   motion in the panel, and only in answer to a click); the masked value stays readable on it. */
+.value {
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0 6px;
+  border-radius: 3px;
+  color: var(--color-ink);
+  background: linear-gradient(var(--color-redact), var(--color-redact)) no-repeat left / 0% 100%, var(--color-wash);
+  transition: background-size 200ms ease-out, color 120ms 80ms;
+  white-space: nowrap;
+}
+.value[data-on="true"] {
+  color: #ffffff;
+  background-size: 100% 100%, auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .value { transition: none; }
+}

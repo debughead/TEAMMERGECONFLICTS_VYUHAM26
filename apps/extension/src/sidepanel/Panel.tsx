@@ -1,22 +1,24 @@
 // Side panel: the full review for the file picked in this tab (choose exactly what to remove), plus
-// settings. Same design language as the in-page card.
+// settings. Same vocabulary and grouping as the in-page card.
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Finding, ScanContext, ScanResult, VerifyReport } from "@redactguard/core/schemas";
+import type { ScanContext, ScanResult, VerifyReport } from "@redactguard/core/schemas";
 import { DEFAULT_SETTINGS, Settings, type TabStatus } from "../messages.ts";
-import { defaultSelection, GROUPS, groupOf, identityKit, isNeeded, kitSentence, labelOf, listable, receipt, VERDICT_COPY } from "../ui/groups.ts";
+import { RegionMap } from "./RegionMap.tsx";
+import {
+  actionLabel, defaultSelection, displayOf, GROUPS, identityKit, kitSentence, receipt, rowNote, rowsOf, rowState, toggleRow, VERDICT_COPY, type Row,
+} from "../ui/groups.ts";
 
 interface TabState { fileName: string; context: ScanContext; result: ScanResult; status: TabStatus }
 type PanelReply = { ok: true; verify: VerifyReport; attached: boolean } | { ok: false; error: string };
 
 const TONE = {
-  stop: "border-[#B42318] bg-[#FEF3F2] text-[#B42318]",
-  caution: "border-[#B54708] bg-[#FFFAEB] text-[#B54708]",
-  clear: "border-[#1A7F4E] bg-[#ECFDF3] text-[#1A7F4E]",
+  stop: { band: "border-stop bg-stop-wash", title: "text-stop", bar: "bg-stop" },
+  caution: { band: "border-caution bg-caution-wash", title: "text-caution", bar: "bg-caution" },
+  clear: { band: "border-clear bg-clear-wash", title: "text-clear", bar: "bg-clear" },
 } as const;
-const CELL = { stop: "bg-[#B42318]", caution: "bg-[#B54708]", clear: "bg-[#1A7F4E]" } as const;
 const STATUS_COPY: Record<Exclude<TabStatus, "pending">, string> = {
-  "safe-uploaded": "A verified safe copy was attached to the page.",
-  "original-uploaded": "The original was attached. Your reason is in the audit log.",
+  "safe-uploaded": "Uploaded the verified copy.",
+  "original-uploaded": "Uploaded the original. Your reason is in the audit log.",
   cancelled: "This upload was cancelled.",
 };
 
@@ -32,9 +34,12 @@ export function Panel() {
   useEffect(() => {
     const load = async () => {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id === undefined) return;
-      setTabId(tab.id);
-      const s = (await chrome.runtime.sendMessage({ type: "tab-state", tabId: tab.id })) as TabState | null;
+      // E2E builds only: the panel opened as a tab for screenshots reviews the tab named in ?tab=.
+      const forced = import.meta.env.MODE === "e2e" ? Number(new URLSearchParams(location.search).get("tab")) || null : null;
+      const id = forced ?? tab?.id;
+      if (id === undefined) return;
+      setTabId(id);
+      const s = (await chrome.runtime.sendMessage({ type: "tab-state", tabId: id })) as TabState | null;
       setState(s);
       // A new file in this tab resets the selection to the safe default.
       if (s && s.result.scanId !== lastScan.current) {
@@ -56,135 +61,158 @@ export function Panel() {
     save({ ...settings, aiOn: on });
   };
 
-  const redactSelected = async () => {
+  const removeSelected = async () => {
     if (!state || tabId === null) return;
     setBusy(true);
     setOutcome(null);
     const reply = (await chrome.runtime.sendMessage({ type: "panel-redact", tabId, scanId: state.result.scanId, selectedIds: [...selected] })) as PanelReply;
     setBusy(false);
-    if (!reply.ok) return setOutcome(`Couldn't finish: ${reply.error}. Pick the file again on the page.`);
-    if (!reply.verify.passed) return setOutcome("The cleaned copy didn't pass verification, so nothing was attached.");
-    setOutcome(reply.attached ? `Verified and attached. ${reply.verify.recoverableItems} recoverable items left in the file.` : "Verified, but the page's upload field was gone. Pick the file again.");
+    if (!reply.ok) return setOutcome(`Couldn't finish: ${reply.error}. Choose the file again on the page.`);
+    if (!reply.verify.passed) return setOutcome("The cleaned copy failed verification, so nothing was uploaded.");
+    setOutcome(reply.attached ? "Uploaded the verified copy. Nothing you removed can be recovered from it." : "Verified, but the page's upload field is gone. Choose the file again.");
   };
 
   return (
-    <div className="min-h-screen bg-white text-[#1B2A3A] [font-family:system-ui,-apple-system,'Segoe_UI',Roboto,sans-serif]">
-      <header className="flex items-center gap-2 border-b border-[#E2E7EE] px-4 py-3">
-        <img src="/icons/icon32.png" width="20" height="20" alt="" />
-        <h1 className="text-[15px] font-semibold">RedactGuard</h1>
-        <span className="ml-auto text-xs text-[#5A6676]">Everything runs on this device</span>
+    <div className="flex min-h-screen flex-col bg-white text-[13.5px] leading-[1.45] text-ink [font-family:system-ui,-apple-system,'Segoe_UI',Roboto,sans-serif]">
+      <header className="flex items-center gap-2 border-b border-rule px-4 py-2.5">
+        <img src="/icons/icon32.png" width="18" height="18" alt="" />
+        <h1 className="text-[14px] font-semibold">RedactGuard</h1>
+        <span className="ml-auto text-[12px] text-muted">Runs on this device</span>
       </header>
 
-      {state ? <Review state={state} selected={selected} setSelected={setSelected} busy={busy} outcome={outcome} onRedact={redactSelected} />
-        : <p className="px-4 py-6 text-sm text-[#5A6676]">Choose a file in any upload field. RedactGuard checks it here before the site receives it.</p>}
+      <main className="flex-1">
+        {state ? <Review state={state} selected={selected} setSelected={setSelected} busy={busy} outcome={outcome} onRemove={removeSelected} />
+          : <p className="px-4 py-6 text-muted">Choose a file in any upload field. RedactGuard checks it here before the site receives it.</p>}
+      </main>
 
-      <section className="border-t border-[#E2E7EE] px-4 py-4 text-sm">
-        <h2 className="mb-2 font-semibold">How RedactGuard acts</h2>
-        <Choice checked={settings.mode === "ask"} onChange={() => save({ ...settings, mode: "ask" })} title="Ask me" sub="Show what was found and let me choose." />
-        <Choice checked={settings.mode === "auto"} onChange={() => save({ ...settings, mode: "auto" })} title="Clean automatically" sub="Remove location, file details and hidden text without asking. Anything else still asks." />
-        <label className="mt-3 flex items-start gap-2">
-          <input type="checkbox" className="mt-1 h-4 w-4 accent-[#163A5F]" checked={settings.aiOn} onChange={(e) => void toggleAi(e.target.checked)} />
-          <span><span className="font-medium">AI review</span><span className="block text-xs text-[#5A6676]">Claude Opus 5.5 with your own key. Only short lines are sent, with IDs, names and addresses replaced by placeholders.</span></span>
-        </label>
-        {settings.aiOn && (
-          <input type="password" placeholder="Anthropic API key" value={settings.aiKey} onChange={(e) => save({ ...settings, aiKey: e.target.value.trim() })}
-            className="mt-2 w-full rounded-lg border border-[#E2E7EE] px-3 py-2 text-sm" />
-        )}
-        <h3 className="mt-4 font-medium">Trusted sites</h3>
-        {settings.trusted.length === 0 ? <p className="text-xs text-[#5A6676]">None yet. Trusting a site relaxes warnings there; blocks still apply.</p>
-          : <ul className="mt-1 space-y-1">{settings.trusted.map((d) => (
-            <li key={d} className="flex items-center justify-between rounded-md bg-[#F6F8FA] px-2 py-1 text-xs">
-              <span>{d}</span>
-              <button className="font-semibold text-[#163A5F] underline underline-offset-2" onClick={() => save({ ...settings, trusted: settings.trusted.filter((x) => x !== d) })}>Remove</button>
-            </li>))}</ul>}
-      </section>
+      <details className="group border-t border-rule px-4 py-3">
+        <summary className="cursor-pointer list-none font-semibold [&::-webkit-details-marker]:hidden">
+          <span className="inline-block w-3 text-muted transition-transform group-open:rotate-90" aria-hidden>›</span> Settings
+        </summary>
+        <div className="mt-2 space-y-3 pl-3">
+          <fieldset>
+            <legend className="mb-1 font-medium">When a file has something to remove</legend>
+            <Choice checked={settings.mode === "ask"} onChange={() => save({ ...settings, mode: "ask" })} title="Ask me" sub="Show what was found and let me choose." />
+            <Choice checked={settings.mode === "auto"} onChange={() => save({ ...settings, mode: "auto" })} title="Clean automatically" sub="Remove location, file details and hidden text without asking. Anything else still asks." />
+          </fieldset>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" className="mt-[3px] h-4 w-4 accent-ink" checked={settings.aiOn} onChange={(e) => void toggleAi(e.target.checked)} />
+            <span><span className="font-medium">AI review</span><span className="block text-[12px] text-muted">Claude Opus 5.5 with your own key. Only short lines are sent, with IDs, names and addresses replaced by placeholders.</span></span>
+          </label>
+          {settings.aiOn && (
+            <input type="password" placeholder="Anthropic API key" aria-label="Anthropic API key" value={settings.aiKey} onChange={(e) => save({ ...settings, aiKey: e.target.value.trim() })}
+              className="w-full rounded-md border border-rule px-2.5 py-1.5 focus:border-ink focus:outline-none" />
+          )}
+          <div>
+            <p className="font-medium">Trusted sites</p>
+            {settings.trusted.length === 0 ? <p className="text-[12px] text-muted">None. Trusting a site relaxes warnings there; blocks still apply.</p>
+              : <ul className="mt-1 divide-y divide-rule">{settings.trusted.map((d) => (
+                <li key={d} className="flex items-center justify-between py-1 text-[12.5px]">
+                  <span>{d}</span>
+                  <button className="font-medium text-ink underline decoration-rule underline-offset-2 hover:decoration-ink" onClick={() => save({ ...settings, trusted: settings.trusted.filter((x) => x !== d) })}>Stop trusting</button>
+                </li>))}</ul>}
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
 
-function Review({ state, selected, setSelected, busy, outcome, onRedact }: {
-  state: TabState; selected: Set<string>; setSelected: (s: Set<string>) => void; busy: boolean; outcome: string | null; onRedact: () => void;
+function Review({ state, selected, setSelected, busy, outcome, onRemove }: {
+  state: TabState; selected: Set<string>; setSelected: (s: Set<string>) => void; busy: boolean; outcome: string | null; onRemove: () => void;
 }) {
   const { result, context, fileName, status } = state;
   const copy = VERDICT_COPY[result.verdict];
+  const tone = TONE[copy.tone];
   const office = result.fileType === "docx" || result.fileType === "xlsx";
   const { keeps, removed } = useMemo(() => receipt(result, selected), [result, selected]);
   const kit = identityKit(result);
-  const lit = Math.max(1, Math.round(result.exposureScore / 10));
   const done = status !== "pending";
-  const toggle = (f: Finding) => {
-    const next = new Set(selected);
-    next.has(f.id) ? next.delete(f.id) : next.add(f.id);
-    setSelected(next);
-  };
 
   return (
-    <div>
-      <div className={`border-l-4 px-4 py-3 ${TONE[copy.tone]}`}>
-        <h2 className="text-[16px] font-semibold leading-snug">{copy.title}</h2>
-        <p className="truncate text-xs text-[#5A6676]" title={fileName}>{fileName} on {context.domain}</p>
-        <div className="mt-2 flex items-center gap-3">
-          <div className="grid flex-1 grid-cols-10 gap-[3px]" aria-hidden>
-            {Array.from({ length: 10 }, (_, i) => <i key={i} className={`h-[7px] rounded-sm ${i < lit ? CELL[copy.tone] : "bg-[#E2E7EE]"}`} />)}
+    <>
+      <section className={`border-l-[3px] px-4 pb-3 pt-3 ${tone.band}`} aria-label="Verdict">
+        <h2 className={`text-[16px] font-semibold leading-snug ${tone.title}`}>{copy.title}</h2>
+        <p className="mt-0.5 truncate text-[12px] text-muted" title={fileName}>{fileName}, for {context.domain}</p>
+        <div className="mt-2.5 flex items-center gap-2.5" title="How much this file exposes, from 0 to 100">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-rule" aria-hidden>
+            <div className={`h-full ${tone.bar}`} style={{ width: `${Math.max(4, result.exposureScore)}%` }} />
           </div>
-          <span className="whitespace-nowrap text-xs text-[#5A6676] [font-variant-numeric:tabular-nums]"><b className="text-[15px] text-[#1B2A3A]">{result.exposureScore}</b> / 100 exposure</span>
+          <span className="text-[12px] text-muted [font-variant-numeric:tabular-nums]">Exposure {result.exposureScore} of 100</span>
         </div>
-        {kit && <p className="mt-2 text-xs text-[#1B2A3A]">{kitSentence(kit.masked)}</p>}
+        {kit && <p className="mt-2 text-[12.5px]">{kitSentence(kit.masked)}</p>}
         {result.context && (
-          <p className="mt-2 text-xs text-[#1B2A3A]">Upload field “{context.fieldLabel || "unlabelled"}”: this page {result.context.expected ? "asks for this kind of document" : "doesn't usually ask for this kind of document"}.</p>
+          <p className="mt-2 text-[12.5px] text-muted">
+            The upload field asks for “{context.fieldLabel || "a file"}”.{" "}
+            {result.context.expected ? "Items this page needs are left unticked." : "This page doesn't usually ask for this kind of document."}
+          </p>
         )}
-      </div>
+      </section>
 
       {GROUPS.map((g) => {
-        const items = listable(result).filter((f) => groupOf(f) === g.id);
-        if (!items.length) return null;
+        const rows = rowsOf(result, g.id);
+        if (!rows.length) return null;
         return (
-          <section key={g.id} className="px-4 pt-3" aria-label={g.title}>
-            <div className="flex items-baseline gap-2"><h3 className="text-[13.5px] font-semibold">{g.title}</h3><span className="text-xs text-[#5A6676]">{items.length}</span></div>
-            <p className="mb-1 text-xs text-[#5A6676]">{g.why}</p>
-            {items.map((f) => {
-              const disabled = !f.redactable || office || done;
-              return (
-                <label key={f.id} className={`grid grid-cols-[18px_1fr] gap-2 rounded-lg px-2 py-1.5 ${disabled ? "opacity-60" : "cursor-pointer hover:bg-[#F6F8FA]"}`}>
-                  <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[#163A5F]" checked={selected.has(f.id)} disabled={disabled} onChange={() => toggle(f)} />
-                  <span>
-                    <span className="flex flex-wrap items-baseline gap-1.5">
-                      <b className="text-[13.5px] font-semibold">{labelOf(f)}</b>
-                      <code className="rounded border border-[#E2E7EE] bg-[#F6F8FA] px-1 text-[12.5px]">{f.masked}</code>
-                      {isNeeded(result, f) && <span className="text-[11.5px] text-[#1A7F4E]">this page asks for it</span>}
-                    </span>
-                    <span className="block text-xs text-[#5A6676]">{f.reason}{f.page !== null ? `, page ${f.page + 1}` : ""}</span>
-                  </span>
-                </label>
-              );
-            })}
+          <section key={g.id} className="border-b border-rule px-4 py-3 last-of-type:border-b-0" aria-label={g.title}>
+            <h3 className="font-semibold">{g.title} <span className="font-normal text-muted">({rows.length})</span></h3>
+            <p className="text-[12px] text-muted">{g.why}</p>
+            <ul className="mt-1.5">
+              {rows.map((row) => <RowItem key={row.key} row={row} result={result} selected={selected} disabled={!row.f.redactable || office || done}
+                onToggle={() => setSelected(toggleRow(row, selected))} />)}
+            </ul>
+            {g.id === "file" && result.gps && <RegionMap gps={result.gps} />}
           </section>
         );
       })}
 
-      <div className="sticky bottom-0 mt-3 border-t border-[#E2E7EE] bg-white px-4 py-3">
-        {done ? <p className="text-sm font-medium text-[#1A7F4E]">{STATUS_COPY[status as Exclude<TabStatus, "pending">]}</p> : (
+      <div className="sticky bottom-0 border-t border-rule bg-white px-4 py-3">
+        {done ? <p className="font-medium text-clear">{STATUS_COPY[status as Exclude<TabStatus, "pending">]}</p> : (
           <>
-            <p className="mb-2 text-xs text-[#5A6676]" aria-live="polite">
-              The site will get <b className="font-semibold text-[#1B2A3A]">{keeps.length ? keeps.join(", ") : "the document with nothing personal left"}</b>{removed ? `. Removed: ${removed} item${removed === 1 ? "" : "s"}.` : "."}
+            <p className="mb-2 text-[12.5px] text-muted" aria-live="polite">
+              {context.domain} gets <span className="text-ink">{keeps.length ? keeps.join(", ") : "the document with nothing personal in it"}</span>.
             </p>
-            <button onClick={onRedact} disabled={busy || office || removed === 0}
-              className="w-full rounded-[10px] bg-[#163A5F] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#9AA7B6]">
-              {busy ? "Removing and verifying…" : office ? "Word and Excel files can't be cleaned here" : removed ? `Redact selected and upload (${removed})` : "Select something to remove"}
+            <button onClick={onRemove} disabled={busy || office || removed === 0}
+              className="w-full rounded-md bg-ink px-4 py-2.5 font-semibold text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:bg-[#a7b0bb]">
+              {busy ? "Removing and verifying…" : office ? "Word and Excel files can't be cleaned here" : removed ? actionLabel(removed) : "Tick what to remove"}
             </button>
           </>
         )}
-        {outcome && <p className="mt-2 text-xs text-[#1B2A3A]" role="status">{outcome}</p>}
+        {outcome && <p className="mt-2 text-[12.5px]" role="status">{outcome}</p>}
       </div>
-    </div>
+    </>
+  );
+}
+
+function RowItem({ row, result, selected, disabled, onToggle }: {
+  row: Row; result: ScanResult; selected: Set<string>; disabled: boolean; onToggle: () => void;
+}) {
+  const state = rowState(row, selected);
+  const note = rowNote(result, row);
+  const shown = displayOf(row.f);
+  const box = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (box.current) box.current.indeterminate = state === "mixed"; }, [state]);
+  return (
+    <li>
+      <label className={`-mx-2 grid grid-cols-[16px_1fr] gap-x-2.5 rounded-md px-2 py-1.5 ${disabled ? "opacity-60" : "cursor-pointer hover:bg-wash"}`}>
+        <input ref={box} type="checkbox" className="mt-[3px] h-4 w-4 accent-ink" checked={state === "on"} disabled={disabled} onChange={onToggle}
+          aria-describedby={note ? `note-${row.ids[0]}` : undefined} />
+        <span className="min-w-0">
+          <span className="flex items-baseline justify-between gap-3">
+            <span className="font-medium">{shown.label}</span>
+            <span className="value" data-on={state === "on"} title={state === "on" ? "Will be removed" : "Will be sent"}>{shown.value}</span>
+          </span>
+          {note && <span id={`note-${row.ids[0]}`} className="block text-[12px] text-muted">{note}</span>}
+        </span>
+      </label>
+    </li>
   );
 }
 
 function Choice({ checked, onChange, title, sub }: { checked: boolean; onChange: () => void; title: string; sub: string }) {
   return (
     <label className="mt-1 flex cursor-pointer items-start gap-2">
-      <input type="radio" className="mt-1 h-4 w-4 accent-[#163A5F]" checked={checked} onChange={onChange} />
-      <span><span className="font-medium">{title}</span><span className="block text-xs text-[#5A6676]">{sub}</span></span>
+      <input type="radio" name="mode" className="mt-[3px] h-4 w-4 accent-ink" checked={checked} onChange={onChange} />
+      <span><span className="font-medium">{title}</span><span className="block text-[12px] text-muted">{sub}</span></span>
     </label>
   );
 }

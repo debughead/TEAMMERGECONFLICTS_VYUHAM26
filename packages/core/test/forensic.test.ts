@@ -37,9 +37,19 @@ describe("forensic: hidden text", () => {
     expect(runs).toEqual([{ text: "HIDDEN TEXT", reason: "black_highlight" }]);
   });
 
-  it("a mid-gray box over text is not treated as a redaction box", () => {
+  it("an opaque mid-grey box over text hides it, like a black or white one (decided 2026-10-31)", () => {
     const { runs } = analyse(pdfFromContent(textOp(72, 700, 12, "Total 1200") + box(60, 696, 120, 16, 0.6)));
-    expect(runs).toEqual([]);
+    expect(runs).toEqual([{ text: "Total 1200", reason: "covered" }]);
+  });
+
+  it("a see-through grey box over text doesn't hide it (negative control)", () => {
+    const bytes = pdfFromContent(textOp(72, 700, 12, "Total 1200") + "q /Half gs 0.6 g 60 696 120 16 re f Q\n", (doc) => {
+      const res = doc.findPage(0).get("Resources");
+      const gs = doc.newDictionary();
+      gs.put("Half", doc.addObject({ Type: "ExtGState", ca: 0.5 }));
+      res.put("ExtGState", gs);
+    });
+    expect(analyse(bytes).runs).toEqual([]);
   });
 
   it("a box that only grazes text (under 60% coverage) doesn't count", () => {

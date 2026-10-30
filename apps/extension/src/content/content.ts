@@ -3,7 +3,7 @@
 // root, and the original file is never uploaded silently (rules/extension.md).
 import type { Finding, ScanContext, ScanResult } from "@redactguard/core/schemas";
 import { fromB64, toB64, ToContent, type RedactReply, type ScanReply, type Settings } from "../messages.ts";
-import { defaultSelection, GROUPS, groupOf, identityKit, isNeeded, kitSentence, labelOf, listable, receipt, VERDICT_COPY } from "../ui/groups.ts";
+import { actionLabel, defaultSelection, displayOf, GROUPS, identityKit, kitSentence, receipt, rowNote, rowsOf, rowState, toggleRow, VERDICT_COPY, type Row } from "../ui/groups.ts";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
@@ -193,11 +193,9 @@ const CSS_TEXT = `
 .band h2 { margin: 0; font-size: 16.5px; line-height: 1.3; font-weight: 650; color: var(--fg); }
 .file { margin-top: 2px; color: ${C.muted}; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meter { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.cells { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; flex: 1; }
-.cells i { height: 7px; border-radius: 2px; background: ${C.rule}; }
-.cells i.on { background: var(--fg); }
-.score { font-variant-numeric: tabular-nums; font-size: 12.5px; color: ${C.muted}; white-space: nowrap; }
-.score b { color: ${C.ink}; font-size: 15px; }
+.bar { flex: 1; height: 4px; border-radius: 2px; background: ${C.rule}; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--fg); }
+.score { font-variant-numeric: tabular-nums; font-size: 12px; color: ${C.muted}; white-space: nowrap; }
 .kit { margin-top: 10px; font-size: 12.5px; color: ${C.ink}; }
 .body { overflow: auto; padding: 4px 0 6px; }
 .group { padding: 10px 16px 4px; }
@@ -205,22 +203,26 @@ const CSS_TEXT = `
 .gh svg { flex: none; color: ${C.navy}; }
 .gh strong { font-size: 13.5px; font-weight: 650; }
 .gh span { color: ${C.muted}; font-size: 12px; }
-.why { margin: 1px 0 6px 26px; color: ${C.muted}; font-size: 12px; }
-label.row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; margin: 0 0 6px 18px; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.why { margin: 1px 0 6px 24px; color: ${C.muted}; font-size: 12px; }
+.rows { margin: 0 0 0 24px; padding: 0; list-style: none; }
+label.row { display: grid; grid-template-columns: 16px 1fr; gap: 10px; align-items: start; margin: 0 -8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
 label.row:hover { background: ${C.wash}; }
-label.row.off { cursor: default; opacity: .65; }
-label.row input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: ${C.navy}; cursor: inherit; }
-.rt { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
-.rt b { font-weight: 600; font-size: 13.5px; }
-.rt code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: ${C.ink}; background: ${C.wash}; border: 1px solid ${C.rule}; padding: 0 5px; border-radius: 5px; }
+label.row.off { cursor: default; opacity: .6; }
+label.row input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: ${C.ink}; cursor: inherit; }
+.rt { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; }
+.rt b { font-weight: 550; font-size: 13.5px; }
+/* A ticked value is shown as it will leave: redacted (bar sweeps in on click; masked text stays readable). */
+.value { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; padding: 0 6px; border-radius: 3px; color: ${C.ink};
+  background: linear-gradient(#000, #000) no-repeat left / 0% 100%, ${C.wash}; transition: background-size 200ms ease-out, color 120ms 80ms; }
+.value.on { color: #fff; background-size: 100% 100%, auto; }
 .rr { color: ${C.muted}; font-size: 12px; margin-top: 1px; }
-.tag { font-size: 11.5px; color: ${C.clear}; }
 .foot { border-top: 1px solid ${C.rule}; padding: 12px 16px 14px; background: ${C.paper}; }
 .receipt { font-size: 12.5px; color: ${C.muted}; margin-bottom: 10px; }
 .receipt b { color: ${C.ink}; font-weight: 600; }
 button { font: inherit; }
-.primary { width: 100%; border: 0; border-radius: 10px; padding: 11px 14px; background: ${C.navy}; color: white; font-weight: 600; font-size: 14px; cursor: pointer; }
-.primary:disabled { background: #9AA7B6; cursor: not-allowed; }
+.primary { width: 100%; border: 0; border-radius: 6px; padding: 10px 14px; background: ${C.ink}; color: white; font-weight: 600; font-size: 14px; cursor: pointer; }
+.primary:hover { background: #000; }
+.primary:disabled { background: #A7B0BB; cursor: not-allowed; }
 .links { display: flex; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
 .link { border: 0; background: none; padding: 2px 0; color: ${C.navy}; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: ${C.rule}; }
 .link:hover { text-decoration-color: currentColor; }
@@ -234,7 +236,7 @@ summary { cursor: pointer; color: ${C.muted}; font-size: 12.5px; }
 .msg p { margin: 6px 0 0; color: ${C.ink}; }
 .spin { width: 14px; height: 14px; border: 2px solid ${C.rule}; border-top-color: ${C.navy}; border-radius: 50%; animation: s 0.9s linear infinite; flex: none; }
 @keyframes s { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } .value { transition: none; } }
 :focus-visible { outline: 2px solid ${C.navy}; outline-offset: 2px; }
 `;
 
@@ -352,53 +354,65 @@ const card = (() => {
     const band = h("div", { class: "band" });
     band.style.setProperty("--fg", tone.fg);
     band.style.setProperty("--bg", tone.bg);
-    const cells = h("div", { class: "cells", "aria-hidden": "true" });
-    const lit = Math.max(1, Math.round(result.exposureScore / 10));
-    for (let i = 0; i < 10; i++) cells.append(h("i", i < lit ? { class: "on" } : {}));
+    const fill = h("i", {});
+    fill.style.width = `${Math.max(4, result.exposureScore)}%`;
     const kit = identityKit(result);
     band.append(
       h("h2", {}, copy.title),
       h("div", { class: "file", title: file.name }, `${file.name}${result.context && !result.context.expected ? `. ${context.domain} doesn't usually ask for this kind of document.` : ""}`),
-      h("div", { class: "meter" }, cells, h("span", { class: "score" }, h("b", {}, String(result.exposureScore)), " / 100 exposure")),
+      h("div", { class: "meter", title: "How much this file exposes, from 0 to 100" }, h("div", { class: "bar", "aria-hidden": "true" }, fill), h("span", { class: "score" }, `Exposure ${result.exposureScore} of 100`)),
     );
     if (kit) band.append(h("div", { class: "kit" }, kitSentence(kit.masked)));
 
     const receiptEl = h("div", { class: "receipt", "aria-live": "polite" });
     const primary = h("button", { class: "primary" });
+    const syncRows: (() => void)[] = [];
     const refresh = () => {
       const { keeps, removed } = receipt(result, selected);
-      receiptEl.replaceChildren(
-        "The site will get ", h("b", {}, keeps.length ? keeps.join(", ") : "the document with nothing personal left"),
-        removed ? `. Removed: ${removed} item${removed === 1 ? "" : "s"}.` : ".",
-      );
-      primary.textContent = office ? "Word and Excel files can't be cleaned here" : removed ? `Upload safe version (removes ${removed})` : "Select something to remove";
+      receiptEl.replaceChildren(`${context.domain} gets `, h("b", {}, keeps.length ? keeps.join(", ") : "the document with nothing personal in it"), ".");
+      primary.textContent = office ? "Word and Excel files can't be cleaned here" : removed ? actionLabel(removed) : "Tick what to remove";
       primary.toggleAttribute("disabled", office || removed === 0);
+      for (const sync of syncRows) sync();
     };
 
     const body = h("div", { class: "body" });
     for (const g of GROUPS) {
-      const items = listable(result).filter((f) => groupOf(f) === g.id);
-      if (!items.length) continue;
-      const group = h("section", { class: "group", "aria-label": g.title },
-        h("div", { class: "gh" }, icon(g.id), h("strong", {}, g.title), h("span", {}, String(items.length))),
-        h("div", { class: "why" }, g.why));
-      for (const f of items) group.append(row(f));
-      body.append(group);
+      const rows = rowsOf(result, g.id);
+      if (!rows.length) continue;
+      const list = h("ul", { class: "rows" });
+      for (const r of rows) list.append(h("li", {}, row(r)));
+      body.append(h("section", { class: "group", "aria-label": g.title },
+        h("div", { class: "gh" }, icon(g.id), h("strong", {}, g.title), h("span", {}, `(${rows.length})`)),
+        h("div", { class: "why" }, g.why), list));
     }
 
-    function row(f: Finding): HTMLLabelElement {
+    function row(r: Row): HTMLLabelElement {
       const box = h("input", { type: "checkbox" });
-      box.checked = selected.has(f.id);
-      box.disabled = !f.redactable || office;
-      box.addEventListener("change", () => { box.checked ? selected.add(f.id) : selected.delete(f.id); refresh(); });
-      const needed = isNeeded(result, f);
+      box.disabled = !r.f.redactable || office;
+      const shown = displayOf(r.f);
+      const value = h("span", { class: "value" }, shown.value);
+      box.addEventListener("change", () => {
+        const next = toggleRow(r, selected);
+        selected.clear();
+        for (const id of next) selected.add(id);
+        refresh();
+      });
+      syncRows.push(() => {
+        const st = rowState(r, selected);
+        box.checked = st === "on";
+        box.indeterminate = st === "mixed";
+        value.classList.toggle("on", st === "on");
+        value.title = st === "on" ? "Will be removed" : "Will be sent";
+      });
+      const note = rowNote(result, r);
       return h("label", { class: `row${box.disabled ? " off" : ""}` }, box, h("div", {},
-        h("div", { class: "rt" }, h("b", {}, labelOf(f)), h("code", {}, f.masked), needed ? h("span", { class: "tag" }, "this page asks for it") : null),
-        h("div", { class: "rr" }, f.redactable ? f.reason : `${f.reason}. Can't be removed from this file type here.`)));
+        h("div", { class: "rt" }, h("b", {}, shown.label), value),
+        note ? h("div", { class: "rr" }, note) : null));
     }
 
     primary.addEventListener("click", () => {
-      void safeVersion(input, file, result, [...selected], context).then((ok) => { if (ok) toast(`Uploaded a verified safe copy. ${selected.size} item${selected.size === 1 ? "" : "s"} removed.`); });
+      const { removed } = receipt(result, selected);
+      void safeVersion(input, file, result, [...selected], context).then((ok) => { if (ok) toast(`Uploaded the verified copy with ${removed} item${removed === 1 ? "" : "s"} removed.`); });
     });
     const details = h("button", { class: "link" }, "Review in side panel");
     details.addEventListener("click", () => void chrome.runtime.sendMessage({ type: "open-panel" }));

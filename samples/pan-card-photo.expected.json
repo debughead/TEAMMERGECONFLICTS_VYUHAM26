@@ -1,0 +1,24 @@
+{
+  "file": "pan-card-photo.jpg",
+  "description": "Photo of a fake PAN-style card (patterned background, uneven light, noise, JPEG 72) with the number, name, father's name and date of birth unredacted. Needs OCR that copes with photos.",
+  "expectedFindings": [
+    {
+      "type": "pan",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "name",
+      "source": "ocr",
+      "page": 0,
+      "min": 2
+    },
+    {
+      "type": "other",
+      "source": "ocr",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}

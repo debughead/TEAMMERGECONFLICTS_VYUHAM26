@@ -71,7 +71,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     // Only our side panel page may ask for this (it has no tab of its own). E2E builds also accept the
     // panel page opened as a tab, so tests can drive it; production builds keep the strict check.
     const panelAsTab = import.meta.env.MODE === "e2e" && Boolean(sender.tab);
-    if ((sender.tab && !panelAsTab) || sender.url !== chrome.runtime.getURL(PANEL_URL)) return false;
+    const senderPage = panelAsTab ? sender.url?.split("?")[0] : sender.url;
+    if ((sender.tab && !panelAsTab) || senderPage !== chrome.runtime.getURL(PANEL_URL)) return false;
     void (async () => {
       // No "tabs" permission, so the domain comes from the scan we stored for this tab.
       const stored = (await chrome.storage.session.get(tabKey(msg.tabId)))[tabKey(msg.tabId)] as { context?: { domain?: string } } | undefined;

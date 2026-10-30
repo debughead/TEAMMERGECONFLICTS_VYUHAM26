@@ -1,0 +1,77 @@
+{
+  "file": "bank-statement-exposed.pdf",
+  "description": "Realistic bank statement with every detail in plain view (nothing hidden). Values repeat (UPI, card, phone, email) as on real statements; the loan account is labelled 'AC'.",
+  "expectedFindings": [
+    {
+      "type": "aadhaar",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "pan",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "card",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "account",
+      "source": "text",
+      "page": 0,
+      "min": 2
+    },
+    {
+      "type": "phone",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "email",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "upi",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "name",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "address",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "salary",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "metadata",
+      "source": "metadata",
+      "page": null,
+      "min": 1
+    }
+  ],
+  "notExpected": [
+    {
+      "type": "hidden_content"
+    }
+  ]
+}

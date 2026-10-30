@@ -43,12 +43,22 @@ const KEYWORD_WINDOW = 40;
 const AADHAAR_RE = /(?<![\d])(?<![\d][ -])[2-9]\d{3}([ -]?)\d{4}\1\d{4}(?![ -]?\d)/g;
 const CARD_RE = /(?<![\d])(?<![\d][ -])\d(?:[ -]?\d){12,18}(?![ -]?\d)/g;
 const PAN_RE = /\b[A-Z]{3}[A-Z][A-Z]\d{4}[A-Z]\b/g;
+/** Ten letters/digits: a PAN as OCR may misread it. */
+const PAN_OCR_RE = /\b[A-Za-z0-9]{10}\b/g;
+const AS_LETTER: Record<string, string> = { "0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B" };
+const AS_DIGIT: Record<string, string> = { O: "0", Q: "0", D: "0", I: "1", L: "1", Z: "2", S: "5", G: "6", B: "8", T: "7" };
+
+/** Positions 1–5 and 10 must be letters, 6–9 digits: map look-alikes to what the position needs. */
+export function fixPanReading(t: string): string {
+  return [...t].map((c, i) => (i >= 5 && i <= 8 ? AS_DIGIT[c] ?? c : AS_LETTER[c] ?? c)).join("");
+}
 const IFSC_RE = /\b[A-Z]{4}0[A-Z0-9]{6}\b/g;
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
 const UPI_RE = /\b[A-Za-z0-9][A-Za-z0-9._-]{1,255}@([A-Za-z]{2,64})\b(?![.@-]?[A-Za-z0-9])/g;
 const PHONE_RE = /(?<![\d+])(?:\+?91[ -]?|0)?([6-9]\d{4})[ -]?(\d{5})(?![ -]?\d)/g;
 // Bank account numbers have no checksum, so they are only taken right after an explicit label.
-const ACCOUNT_RE = /\b(?:a\/c|acct|account)\.?\s*(?:no|number|num)?\.?\s*[:#-]?\s*(\d(?:[ -]?\d){8,17})(?![ -]?\d)/dgi;
+// "AC" alone is how statements abbreviate it ("LOAN AC 7781200045"); without it that reads as a phone number.
+const ACCOUNT_RE = /\b(?:a\/c|acct|account|ac)\.?\s*(?:no|number|num)?\.?\s*[:#-]?\s*(\d(?:[ -]?\d){8,17})(?![ -]?\d)/dgi;
 const VEHICLE_RE = /\b([A-Z]{2})[ -]?(\d{1,2})[ -]?([A-Z]{1,3})[ -]?(\d{4})\b/g;
 
 export function findIds(text: string, opts: FindIdsOptions = {}): IdMatch[] {
@@ -72,6 +82,14 @@ export function findIds(text: string, opts: FindIdsOptions = {}): IdMatch[] {
     if (isValidCard(digits)) push("card", m, digits, 0.8);
   }
   for (const m of text.matchAll(PAN_RE)) if (isValidPan(m[0])) push("pan", m, m[0], 0.8);
+  if (opts.ocr) {
+    // OCR swaps look-alike characters (0/O, 1/I, 5/S, 8/B) on card photos. A PAN is five letters, four
+    // digits, one letter, so each position says which reading is right; accept only a valid result.
+    for (const m of text.matchAll(PAN_OCR_RE)) {
+      const fixed = fixPanReading(m[0].toUpperCase());
+      if (fixed !== m[0] && isValidPan(fixed)) push("pan", m, fixed, 0.65);
+    }
+  }
   for (const m of text.matchAll(IFSC_RE)) if (isValidIfsc(m[0])) push("ifsc", m, m[0], 0.75);
   for (const m of text.matchAll(EMAIL_RE)) push("email", m, m[0].toLowerCase(), 0.9);
   for (const m of text.matchAll(UPI_RE)) {

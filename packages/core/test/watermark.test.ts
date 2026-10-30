@@ -10,7 +10,7 @@ const WM = { domain: "jobs.example.test", purpose: "job application", date: "30 
 
 describe("purpose watermark", () => {
   it("stamps every page, survives verify, and is readable as text", async () => {
-    const result = await scan(new Uint8Array(readFileSync(SAMPLES + "bank-statement-fake-redaction.pdf")), OPTS);
+    const result = await scan(new Uint8Array(readFileSync(SAMPLES + "weak-redaction.pdf")), OPTS);
     const out = await redact(result.scanId, { selectedIds: result.findings.map((f) => f.id), watermark: WM });
     expect(out.verify.passed).toBe(true);
     const text = mupdf.Document.openDocument(out.bytes!, "application/pdf").loadPage(0).toStructuredText("preserve-whitespace").asText();
