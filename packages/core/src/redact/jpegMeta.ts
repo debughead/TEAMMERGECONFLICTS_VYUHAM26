@@ -35,7 +35,8 @@ export function stripJpegMetadata(b: Uint8Array): Uint8Array | null {
     const len = (b[j + 1]! << 8) | b[j + 2]!;
     const end = j + 1 + len;
     if (len < 2 || end > b.length) return null;
-    if (keepSegment(m, b.subarray(j + 3, end))) parts.push(b.subarray(j - 1, end));
+    const kept = keepSegment(m, b.subarray(j - 1, end));
+    if (kept) parts.push(kept);
     i = end;
   }
   const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
@@ -44,12 +45,28 @@ export function stripJpegMetadata(b: Uint8Array): Uint8Array | null {
   return out;
 }
 
-function keepSegment(marker: number, payload: Uint8Array): boolean {
-  if (marker === 0xfe) return false; // COM: free text
-  if (marker < 0xe0 || marker > 0xef) return true; // tables, frame headers, restart interval…
-  if (marker === 0xe0 || marker === 0xee) return true; // APP0 JFIF, APP14 Adobe (colour transform)
-  if (marker === 0xe2) return ICC_ID.every((v, k) => payload[k] === v);
-  return false; // APP1 EXIF/XMP, APP13 IPTC/Photoshop, vendor APPn
+const JFIF_ID = [0x4a, 0x46, 0x49, 0x46, 0x00]; // "JFIF\0"
+/** JFIF header without its thumbnail: identifier, version, units, densities (12 bytes) + 0×0 thumbnail size. */
+const JFIF_FIXED = 12;
+
+/** The segment to keep (whole, from its FF marker), a rewritten copy, or null to drop it. */
+function keepSegment(marker: number, segment: Uint8Array): Uint8Array | null {
+  const payload = segment.subarray(4);
+  if (marker === 0xfe) return null; // COM: free text
+  if (marker < 0xe0 || marker > 0xef) return segment; // tables, frame headers, restart interval…
+  if (marker === 0xee) return segment; // APP14 Adobe (colour transform)
+  if (marker === 0xe0) {
+    // JFIF may carry an uncompressed thumbnail, and a JFXX extension a JPEG one: a small copy of the
+    // photo as it was before redaction. Keep the header, drop the thumbnail; drop JFXX and other APP0.
+    if (!JFIF_ID.every((v, k) => payload[k] === v) || payload.length < JFIF_FIXED + 2) return null;
+    if (payload[JFIF_FIXED] === 0 && payload[JFIF_FIXED + 1] === 0) return segment;
+    const out = new Uint8Array(4 + JFIF_FIXED + 2);
+    out.set([0xff, 0xe0, 0, 2 + JFIF_FIXED + 2]);
+    out.set(payload.subarray(0, JFIF_FIXED), 4);
+    return out; // the two thumbnail size bytes stay 0
+  }
+  if (marker === 0xe2) return ICC_ID.every((v, k) => payload[k] === v) ? segment : null;
+  return null; // APP1 EXIF/XMP, APP13 IPTC/Photoshop, vendor APPn
 }
 
 function findEoi(b: Uint8Array, from: number): number {

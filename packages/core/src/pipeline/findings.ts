@@ -56,8 +56,12 @@ export class FindingCollector {
   /** Adds the "identity kit" combination finding (HLD §3.5.6). Call once after all other findings. */
   addCombinationRisks(): void {
     const has = (...types: Finding["type"][]) => this.findings.some((f) => types.includes(f.type));
-    if (has("name") && has("aadhaar", "pan") && has("address", "phone")) {
-      const parts = ["name", has("aadhaar") ? "Aadhaar" : "PAN", has("address") ? "address" : "phone"];
+    const dob = this.findings.some(isBirthDate);
+    // A name and an ID number plus any one way to reach or verify the person (address, phone, email,
+    // date of birth): enough for a SIM swap, a loan or KYC in their name.
+    if (has("name") && has("aadhaar", "pan") && (has("address", "phone", "email") || dob)) {
+      const third = has("address") ? "address" : has("phone") ? "phone" : has("email") ? "email" : "date of birth";
+      const parts = ["name", has("aadhaar") ? "Aadhaar" : "PAN", third];
       this.add({
         type: "identity_kit", source: "combination", page: null, rects: [], masked: parts.join(" + "),
         reason: "Together these are enough to attempt identity fraud (SIM swap, loan or KYC in your name)",
@@ -66,6 +70,10 @@ export class FindingCollector {
     }
   }
 }
+
+/** Dates of birth have no type of their own in the shared contract ("other"); this mask marks them. */
+export const BIRTH_DATE_MASK = "Date of birth: XX/XX/XXXX";
+const isBirthDate = (f: Finding) => f.type === "other" && f.masked.startsWith("Date of birth");
 
 /**
  * Runs Layer 2 (IDs) and local NER over a text layer. `hidden` (PDF text only) marks chars that are
@@ -135,7 +143,7 @@ export function collectTextFindings(
     claimed.push([d.start, d.end]);
     out.add({
       type: "other", source, page: layer.index, rects: rectsFor(d.start, d.end),
-      masked: "Date of birth: XX/XX/XXXX", reason: `Date of birth ${whyFor(d.start, d.end, source)}`,
+      masked: BIRTH_DATE_MASK, reason: `Date of birth ${whyFor(d.start, d.end, source)}`,
       confidence: 0.9, redactable: true, detector: detectorFor(source, "local_ner"),
     }, [d.raw], "medium");
   }

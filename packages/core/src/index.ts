@@ -36,7 +36,7 @@ export {
 export { parsePolicy, destinationFor, type PolicyLoad } from "./compliance/load.ts";
 export { GENERAL_COMPANY_POLICY } from "./compliance/packs.ts";
 export type { PolicyRun } from "./compliance/evaluate.ts";
-export { appendAudit, generateAuditKey, verifyChain, memoryAuditStore, type AuditStore, type AuditInput, type ChainCheck } from "./audit/chain.ts";
+export { appendAudit, generateAuditKey, verifyChain, memoryAuditStore, type AuditHead, type AuditStore, type AuditInput, type ChainCheck } from "./audit/chain.ts";
 
 /** Host-supplied capabilities; functions can't live in the zod-validated options. */
 export interface CoreDeps {

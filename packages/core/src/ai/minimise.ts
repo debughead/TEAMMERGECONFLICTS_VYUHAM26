@@ -70,8 +70,30 @@ export function selectLines(layers: TextLayer[], ph: Placeholders): SelectedLine
   return out;
 }
 
+/**
+ * A line longer than this is sent in pieces, so no single line can push a request past the limit.
+ * Each piece keeps the whole original line: replies are mapped back by finding their text in it.
+ */
+const MAX_PIECE_CHARS = 2000;
+
+function pieces(l: SelectedLine): SelectedLine[] {
+  if (l.masked.length <= MAX_PIECE_CHARS) return [l];
+  const out: SelectedLine[] = [];
+  let rest = l.masked;
+  while (rest.length > MAX_PIECE_CHARS) {
+    // Break at a space where there is one, so words (and placeholders) stay whole.
+    const space = rest.lastIndexOf(" ", MAX_PIECE_CHARS);
+    const cut = space > MAX_PIECE_CHARS / 2 ? space + 1 : MAX_PIECE_CHARS;
+    out.push({ ...l, masked: rest.slice(0, cut) });
+    rest = rest.slice(cut);
+  }
+  if (rest) out.push({ ...l, masked: rest });
+  return out;
+}
+
 /** Groups lines into chunks that fit one request. Line numbers are global so replies map back. */
-export function chunkLines(lines: SelectedLine[]): { from: number; lines: SelectedLine[] }[] {
+export function chunkLines(input: SelectedLine[]): { from: number; lines: SelectedLine[] }[] {
+  const lines = input.flatMap(pieces);
   const chunks: { from: number; lines: SelectedLine[] }[] = [];
   let cur: SelectedLine[] = [];
   let size = 0;

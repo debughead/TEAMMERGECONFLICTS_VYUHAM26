@@ -43,6 +43,13 @@ export interface SniffResult {
   zipEntries?: string[];
 }
 
+const PDF_HEADER_WINDOW = 1024;
+
+function indexOf(b: Uint8Array, sig: number[]): number {
+  for (let i = 0; i + sig.length <= b.length; i++) if (sig.every((v, k) => b[i + k] === v)) return i;
+  return -1;
+}
+
 /** Sniffs type from magic bytes and enforces every limit that can be checked without parsing. */
 export function sniffAndCheck(bytes: Uint8Array, profile: LimitProfile): SniffResult {
   if (bytes.length > LIMITS.maxBytes[profile]) {
@@ -55,6 +62,10 @@ export function sniffAndCheck(bytes: Uint8Array, profile: LimitProfile): SniffRe
     return checkImage("webp", webpSize(bytes));
   }
   if (startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) return checkOfficeZip(bytes);
+  // PDF readers accept a header anywhere in the first 1024 bytes (a BOM, a blank line, mail-gateway junk).
+  // Checked last, so a file with a real image or zip signature is never taken for a PDF. The bytes before
+  // the header aren't part of the document; redaction writes a fresh file, which leaves them out.
+  if (indexOf(bytes.subarray(0, PDF_HEADER_WINDOW), [0x25, 0x50, 0x44, 0x46, 0x2d]) >= 0) return { fileType: "pdf" };
   throw new LimitError("unsupported_type", "Unsupported file type (PDF, JPEG, PNG, WebP, DOCX, XLSX only)");
 }
 

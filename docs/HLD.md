@@ -215,9 +215,9 @@ RedactResult  { bytes: ArrayBuffer; mime; filename; verify: VerifyReport; unreda
      - **medium:** name with address, phone, email
      - **low:** other metadata
    - **Exposure score:** each finding adds 40/20/8/2 points by severity (×1.5 if hidden), capped at 100.
-   - **Combination rule:** a name, plus Aadhaar or PAN, plus an address or phone adds a critical "identity kit" finding.
+   - **Combination rule:** a name, plus Aadhaar or PAN, plus an address, phone, email or date of birth adds a critical "identity kit" finding (D-041).
 7. **Policy (extension):**
-   - **Keyword rules:** the field label, page title and domain map to expected document types. For example, "aadhaar|kyc" expects Aadhaar and PAN; "resume|cv" expects name, phone and email.
+   - **Keyword rules:** the field label and page title map to expected document types. For example, "aadhaar|kyc" expects Aadhaar and PAN; "resume|cv" expects name, phone and email. The domain is not matched: anyone can register a domain containing "aadhaar" (D-042).
    - **AI tie-breaker:** only when AI is on and no rule matched. It receives only the domain, label, title and finding types.
    - **Block rule (D-020):** any critical finding the page doesn't need blocks, even on pages that expect some upload.
    - **Hard rules:**
@@ -253,7 +253,8 @@ The output is re-opened as a fresh document and re-scanned (extraction, forensic
 - **HMAC key:** created with `crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256'}, extractable=false)` and stored as a `CryptoKey` in IndexedDB, so code can use it but never read it out.
   - Plain hashes of Aadhaar numbers could be brute-forced; this keyed HMAC can't.
 - **Actions logged:** scan, redact, verify, override (with the user's reason), trust_site, ai_call (line count and placeholder types only).
-- **Chain check:** `verifyChain()` recomputes the chain. The UI shows "Chain intact ✓" or the first broken row.
+- **Signed head (D-043):** every append also stores `{seq, rowHash, mac}` (mac = HMAC of `seq:rowHash`) in the same transaction, apart from the rows. Without it, a log missing its newest rows, or all of them, looks like a valid shorter log.
+- **Chain check:** `verifyChain(rows, {head, key})` recomputes the chain and checks the rows still reach the signed head. The UI shows "Chain intact ✓" or the first broken row.
 - **Export:** the log can be exported as JSON for proof.
 
 ### 3.9 Extension (MV3)

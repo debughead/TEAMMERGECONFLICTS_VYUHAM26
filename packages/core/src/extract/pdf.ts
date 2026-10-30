@@ -141,7 +141,7 @@ export function extractPage(page: mupdf.PDFPage, index: number, textless: () => 
 /** Annotation types that don't carry free-text comments (links, form widgets, popups mirror their parent). */
 const NOT_COMMENTS = new Set(["Link", "Widget", "Popup", "Redact"]);
 
-const STEXT_OPTIONS = "preserve-whitespace,mediabox-clip=no";
+const STEXT_OPTIONS = "preserve-whitespace,clip=no";
 
 function walkChars(page: mupdf.PDFPage, onChar: (c: string, rect: Rect, color: number[]) => void, endLine: () => void): void {
   page.toStructuredText(STEXT_OPTIONS).walk({

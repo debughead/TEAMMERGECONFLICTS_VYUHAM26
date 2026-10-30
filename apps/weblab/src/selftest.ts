@@ -1,5 +1,5 @@
 // Runs the real engine worker in a real browser on the fake samples and prints a JSON report.
-import { lastWorkerError, pingEngine, redactScan, scanFile } from "./engine/client.ts";
+import { auditCheck, auditEvents, lastWorkerError, pingEngine, redactScan, scanFile } from "./engine/client.ts";
 
 // Vite resolves these to served URLs (dev only; this page isn't in the production build).
 const SAMPLE_URLS = import.meta.glob("../../../samples/*.{pdf,png,jpg,docx}", { query: "?url", import: "default", eager: true }) as Record<string, string>;
@@ -48,6 +48,9 @@ try {
       ms: Math.round(performance.now() - t0),
     };
   }
+  // The scans above appended audit rows; the chain and its signed head (D-043) must check out in IndexedDB.
+  step("audit chain");
+  report.audit = { rows: (await auditEvents()).length, check: await auditCheck() };
 } catch (e) {
   report.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
 }
