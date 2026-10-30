@@ -10,6 +10,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "samples": "pnpm --filter @redactguard/core samples",
-    "demo": "node demo-sites/serve.mjs"
+    "demo": "node demo-sites/serve.mjs",
+    "models": "node apps/weblab/scripts/fetch-ocr-models.mjs"
   }
 }

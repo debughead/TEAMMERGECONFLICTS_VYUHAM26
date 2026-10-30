@@ -2,15 +2,22 @@
 // "box drawn over text" (hidden) from "text drawn on a dark bar" (visible). Spike S2 / D-011.
 import * as mupdf from "mupdf";
 import type { Rect } from "../schemas.ts";
-import { luminance } from "../util/geom.ts";
+import { intersect, luminance } from "../util/geom.ts";
 
 export interface DrawEvent {
-  kind: "fill" | "image" | "text";
+  /** "invisible_text" is text drawn in an invisible render mode (e.g. an OCR layer); it paints nothing. */
+  kind: "fill" | "image" | "text" | "invisible_text";
   /** Paint order within the page content. */
   seq: number;
   rect: Rect;
+  /** Area the active clipping paths let through when this was drawn (null: unclipped). */
+  clip: Rect | null;
   /** 0 black .. 1 white; images use their mean luminance. */
   luminance: number;
+  /**
+   * Effective opacity: the draw's own alpha times its transparency groups'. 0 inside a non-Normal blend
+   * group (a multiply highlighter doesn't hide what's under it) and inside soft-masked content.
+   */
   alpha: number;
 }
 
@@ -22,27 +29,73 @@ export function collectDraws(page: mupdf.Page): DrawEvent[] {
   const events: DrawEvent[] = [];
   const stroke = new mupdf.StrokeState(NO_STROKE);
   let seq = 0;
+  // Clip stack: each entry is the effective visible area (intersection with its parent) and whether it
+  // is a soft mask (content under a mask is partly transparent, so it never counts as covering).
+  const clips: { rect: Rect | null; masked: boolean }[] = [];
+  const groupAlpha: number[] = [];
+  let definingMask = 0;
+  let inTile = 0;
+  const top = () => clips[clips.length - 1];
+  const pushClip = (r: Rect | null, masked = false) => {
+    const parent = top();
+    const rect = r && parent?.rect ? intersect(r, parent.rect) ?? ([r[0], r[1], r[0], r[1]] as Rect) : r ?? parent?.rect ?? null;
+    clips.push({ rect, masked: masked || Boolean(parent?.masked) });
+  };
+  const alphaNow = (alpha: number) => (top()?.masked ? 0 : alpha * (groupAlpha[groupAlpha.length - 1] ?? 1));
+  const record = (kind: DrawEvent["kind"], rect: Rect, luminance: number, alpha: number) => {
+    // Shapes that define a soft mask or a pattern cell are never painted on the page as such.
+    if (definingMask > 0 || inTile > 0) return;
+    events.push({ kind, seq: seq++, rect, clip: top()?.rect ?? null, luminance, alpha: alphaNow(alpha) });
+  };
   const device = new mupdf.Device({
     fillPath(path, _evenOdd, ctm, _cs, color, alpha) {
-      events.push({ kind: "fill", seq: seq++, rect: path.getBounds(stroke, ctm), luminance: luminance(color), alpha });
+      record("fill", path.getBounds(stroke, ctm), luminance(color), alpha);
     },
     fillText(text, ctm, _cs, color, alpha) {
-      events.push({ kind: "text", seq: seq++, rect: text.getBounds(stroke, ctm), luminance: luminance(color), alpha });
+      record("text", text.getBounds(stroke, ctm), luminance(color), alpha);
+    },
+    strokeText(text, _stroke, ctm, _cs, color, alpha) {
+      record("text", text.getBounds(stroke, ctm), luminance(color), alpha);
+    },
+    ignoreText(text, ctm) {
+      record("invisible_text", text.getBounds(stroke, ctm), 1, 0);
     },
     fillImage(image, ctm, alpha) {
-      events.push({ kind: "image", seq: seq++, rect: mupdf.Rect.transform([0, 0, 1, 1], ctm), luminance: imageLuminance(image), alpha });
+      record("image", mupdf.Rect.transform([0, 0, 1, 1], ctm), imageLuminance(image), alpha);
     },
     fillImageMask(_image, ctm, _cs, color, alpha) {
       // A stencil mask painted in a solid colour behaves like a filled shape.
-      events.push({ kind: "fill", seq: seq++, rect: mupdf.Rect.transform([0, 0, 1, 1], ctm), luminance: luminance(color), alpha });
+      record("fill", mupdf.Rect.transform([0, 0, 1, 1], ctm), luminance(color), alpha);
     },
+    clipPath(path, _evenOdd, ctm) { pushClip(path.getBounds(stroke, ctm)); },
+    clipStrokePath(path, _stroke, ctm) { pushClip(path.getBounds(stroke, ctm)); },
+    clipText(text, ctm) { pushClip(text.getBounds(stroke, ctm)); },
+    clipStrokeText(text, _stroke, ctm) { pushClip(text.getBounds(stroke, ctm)); },
+    clipImageMask(_image, ctm) { pushClip(mupdf.Rect.transform([0, 0, 1, 1], ctm)); },
+    popClip() { clips.pop(); },
+    beginMask() { definingMask++; },
+    // The mask applies to what follows until its popClip.
+    endMask() { definingMask = Math.max(0, definingMask - 1); pushClip(null, true); },
+    beginGroup(_bbox, _cs, _isolated, _knockout, blendmode, alpha) {
+      groupAlpha.push((groupAlpha[groupAlpha.length - 1] ?? 1) * (blendmode === "Normal" ? alpha : 0));
+    },
+    endGroup() { groupAlpha.pop(); },
+    beginTile() { inTile++; return 0; },
+    endTile() { inTile = Math.max(0, inTile - 1); },
   });
   try {
     page.runPageContents(device, mupdf.Matrix.identity);
   } finally {
+    // Free now rather than in a garbage-collection finalizer (see pageInk.ts).
     device.close();
+    device.destroy();
   }
   return events;
+}
+
+/** The part of a draw that can actually be seen: its bounds cut to its clip. */
+export function visibleRect(d: DrawEvent): Rect | null {
+  return d.clip ? intersect(d.rect, d.clip) : d.rect;
 }
 
 function imageLuminance(image: mupdf.Image): number {
@@ -84,7 +137,9 @@ export function largestImage(page: mupdf.Page): { image: mupdf.Image; toPage: (r
   try {
     page.runPageContents(device, mupdf.Matrix.identity);
   } finally {
+    // Free now rather than in a garbage-collection finalizer (see pageInk.ts).
     device.close();
+    device.destroy();
   }
   if (!best) return null;
   const { image, ctm } = best;

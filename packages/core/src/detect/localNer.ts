@@ -40,7 +40,7 @@ const MEDICAL_LABEL = /\b(?:diagnosis|diagnosed with|condition|prescription|rx|m
 const MEDICAL_TERMS = /\b(?:diabetes|hypertension|hiv|hepatitis|tuberculosis|cancer|tumou?r|asthma|depression|anxiety|bipolar|schizophrenia|pregnan(?:t|cy)|thyroid|epilepsy|covid|dialysis|chemotherapy|insulin|mg\b)/i;
 
 export function findLocalEntities(text: string): NerMatch[] {
-  const out: NerMatch[] = [...labelledNames(text), ...lexiconPeople(text), ...addresses(text), ...salaries(text), ...medical(text)];
+  const out: NerMatch[] = [...labelledNames(text), ...cardFieldNames(text), ...lexiconPeople(text), ...addresses(text), ...salaries(text), ...medical(text)];
   return dedupe(out);
 }
 
@@ -56,6 +56,28 @@ function labelledNames(text: string): NerMatch[] {
     if (tokens.length === 1 && !/[:-]/.test(m[0])) continue;
     const raw = v[0].trim();
     out.push({ type: "name", start: v.index, end: v.index + raw.length, raw, confidence: 0.85, needsContext: false });
+  }
+  return out;
+}
+
+/** A line that is only a name label (cards print "नाम / Name" above the value, not beside it). */
+// Anything may precede a "/": bilingual labels ("पिता का नाम / Father's Name") reach us with the Hindi
+// half misread as Latin letters.
+const CARD_NAME_LABEL = /^(?:.{0,40}\/\s*)?(?:name|father'?s name|mother'?s name|husband'?s name|holder'?s name)\s*[:.]?\s*$/i;
+/** The value line under it: 1–4 words of letters, as ID cards print names. */
+const CARD_NAME_VALUE = /^[A-Za-z][A-Za-z.'-]*(?: +[A-Za-z][A-Za-z.'-]*){0,4}$/;
+
+function cardFieldNames(text: string): NerMatch[] {
+  const out: NerMatch[] = [];
+  let offset = 0;
+  const lines = text.split("\n").map((l) => { const at = offset; offset += l.length + 1; return { l, at }; });
+  for (let k = 0; k + 1 < lines.length; k++) {
+    if (!CARD_NAME_LABEL.test(lines[k]!.l.trim())) continue;
+    const next = lines[k + 1]!;
+    const raw = next.l.trim();
+    if (raw.replace(/[^A-Za-z]/g, "").length < 2 || !CARD_NAME_VALUE.test(raw) || CARD_NAME_LABEL.test(raw)) continue;
+    const start = next.at + next.l.indexOf(raw);
+    out.push({ type: "name", start, end: start + raw.length, raw, confidence: 0.85, needsContext: false });
   }
   return out;
 }

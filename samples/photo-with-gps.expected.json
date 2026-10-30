@@ -1,0 +1,18 @@
+{
+  "file": "photo-with-gps.pdf",
+  "description": "PDF holding one photo whose JPEG still carries EXIF: fake GPS (Kochi city centre), camera make/model and time.",
+  "expectedFindings": [
+    {
+      "type": "gps",
+      "source": "metadata",
+      "page": null,
+      "min": 1
+    },
+    {
+      "type": "metadata",
+      "source": "metadata",
+      "page": null,
+      "min": 1
+    }
+  ]
+}

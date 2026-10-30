@@ -15,3 +15,5 @@ apps/extension/dist-e2e/
 demo-sites/big-test.pdf
 .claude
 Claude.md
+vendor-models/
+apps/*/public/vendor/

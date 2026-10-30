@@ -4,7 +4,7 @@ import { layerFromOcrWords, type TextLayer } from "../extract/textLayer.ts";
 import type { OcrEngine } from "../ocr/engine.ts";
 import { recognizeBest } from "../ocr/preprocess.ts";
 import type { GpsSummary } from "../schemas.ts";
-import { collectImageForensics, collectTextFindings, FindingCollector } from "./findings.ts";
+import { coarseCoord, collectImageForensics, collectTextFindings, FindingCollector } from "./findings.ts";
 import { maskMeta } from "./scanPdf.ts";
 
 export interface ImageScanOutput {
@@ -16,8 +16,7 @@ export interface ImageScanOutput {
   ocr: { pagesDone: number; pagesTotal: number };
 }
 
-/** ~11 km: enough for a region-level map pin without revealing the exact spot. */
-const coarse = (v: number) => Math.round(v * 10) / 10;
+const coarse = coarseCoord;
 
 export async function scanImage(bytes: Uint8Array, ocr: OcrEngine | null): Promise<ImageScanOutput> {
   const meta = await readImageMeta(bytes);

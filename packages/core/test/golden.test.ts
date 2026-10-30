@@ -16,10 +16,10 @@ const SAMPLES = fileURLToPath(new URL("../../../samples/", import.meta.url));
 const FAKE_VALUES = [FAKE.aadhaar, aadhaarSpaced(FAKE.aadhaar), FAKE.accountNo, FAKE.phone, FAKE.pan, FAKE.upi, FAKE.author, FAKE.name];
 
 interface Expected { type: FindingType; source: string; page: number | null; min: number }
-interface Sample { file: string; kind: "pdf" | "image" | "office"; needsOcr: boolean }
+interface Sample { file: string; kind: "pdf" | "image" | "office"; needsOcr: boolean; hasText?: boolean; hasPhotos?: boolean }
 
 const SAMPLE_LIST: Sample[] = [
-  { file: "bank-statement-fake-redaction.pdf", kind: "pdf", needsOcr: false },
+  { file: "weak-redaction.pdf", kind: "pdf", needsOcr: false },
   { file: "incremental-edit.pdf", kind: "pdf", needsOcr: false },
   { file: "dark-image-over-text.pdf", kind: "pdf", needsOcr: false },
   { file: "prompt-injection.pdf", kind: "pdf", needsOcr: false },
@@ -29,6 +29,9 @@ const SAMPLE_LIST: Sample[] = [
   { file: "gps-photo-rotated.jpg", kind: "image", needsOcr: false },
   { file: "tracked-changes.docx", kind: "office", needsOcr: false },
   { file: "hidden-sheet.xlsx", kind: "office", needsOcr: false },
+  { file: "bank-statement-exposed.pdf", kind: "pdf", needsOcr: false },
+  { file: "photo-with-gps.pdf", kind: "pdf", needsOcr: false, hasText: false, hasPhotos: true },
+  { file: "pan-card-photo.jpg", kind: "image", needsOcr: true },
 ];
 
 const hasTool = (bin: string) => {
@@ -47,7 +50,13 @@ afterAll(async () => { if (hasTessdata) await (await nodeOcr()).stop(); });
 for (const s of SAMPLE_LIST) {
   describe.skipIf(s.needsOcr && !hasTessdata)(`golden: ${s.file}`, () => {
     const bytes = new Uint8Array(readFileSync(SAMPLES + s.file));
-    const expected: Expected[] = JSON.parse(readFileSync(SAMPLES + s.file.replace(/\.[^.]+$/, ".expected.json"), "utf8")).expectedFindings;
+    const spec = JSON.parse(readFileSync(SAMPLES + s.file.replace(/\.[^.]+$/, ".expected.json"), "utf8")) as { expectedFindings: Expected[]; notExpected?: { type: FindingType }[] };
+    const expected = spec.expectedFindings;
+
+    it.each(spec.notExpected ?? [{ type: "__none__" as FindingType }])("never reports $type (false-positive guard)", async (n) => {
+      const result = await scan(bytes, OPTS, await deps(s));
+      expect(result.findings.filter((f) => f.type === n.type)).toEqual([]);
+    });
 
     it.each(expected)("finds $type from $source on page $page", async (e) => {
       const result = await scan(bytes, OPTS, await deps(s));
@@ -69,12 +78,9 @@ for (const s of SAMPLE_LIST) {
       expect(out.verify.checks.filter((c) => !c.passed)).toEqual([]);
       expect(out.verify.recoverableItems).toBe(0);
       expect(out.bytes).not.toBeNull();
-      if (s.kind === "office") {
-        // Scan-only content can't be removed here (D-003); it must be reported back, not silently ignored.
-        expect(out.unredacted.length).toBe(result.findings.filter((f) => !f.redactable).length);
-      } else {
-        expect(out.unredacted).toEqual([]);
-      }
+      // Whatever can't be removed (Office body text, D-003; an "ID card" summary on a photo) must be
+      // reported back, never silently ignored, and nothing else may be left.
+      expect([...out.unredacted].sort()).toEqual(result.findings.filter((f) => !f.redactable).map((f) => f.id).sort());
       // The output must scan clean of everything the clean step owns.
       const rescan = await scan(out.bytes!, OPTS, d);
       expect(rescan.findings.filter((f) => f.autoCleanable)).toEqual([]);
@@ -88,10 +94,22 @@ for (const s of SAMPLE_LIST) {
         const file = tmpFile("out.pdf", out.bytes!);
         const text = execFileSync("pdftotext", [file, "-"], { encoding: "utf8" });
         for (const v of FAKE_VALUES) expect(text).not.toContain(v);
-        if (!s.needsOcr) expect(text).toMatch(/FAKE BANK OF TESTING|Employee Record|Payslip|Application/);
+        if (!s.needsOcr && s.hasText !== false) expect(text).toMatch(/FAKE BANK OF TESTING|Fake Bank of Testing|Employee Record|Payslip|Application/);
         const info = execFileSync("pdfinfo", [file], { encoding: "utf8" });
         expect(info).not.toMatch(/^(Author|Creator):/m);
         expect(Buffer.from(out.bytes!).toString("latin1")).not.toContain(FAKE.pan);
+      });
+    }
+
+    if (s.hasPhotos) {
+      it.runIf(hasTool("pdfimages") && hasTool("exiftool"))("pdfimages + exiftool find no GPS or camera tags in the output's photos", async () => {
+        const result = await scan(bytes, OPTS);
+        const out = await redact(result.scanId, { selectedIds: result.findings.map((f) => f.id), watermark: null });
+        const file = tmpFile("out.pdf", out.bytes!);
+        const prefix = file.replace(/out\.pdf$/, "img");
+        execFileSync("pdfimages", ["-j", file, prefix]);
+        const tags = execFileSync("exiftool", ["-s", "-GPS*", "-Make", "-Model", "-DateTimeOriginal", `${prefix}-000.jpg`], { encoding: "utf8" });
+        expect(tags.trim()).toBe("");
       });
     }
 
@@ -143,7 +161,7 @@ describe("images: orientation", () => {
 
 describe("verify can fail", () => {
   it("the unredacted original fails verification", async () => {
-    const bytes = new Uint8Array(readFileSync(SAMPLES + "bank-statement-fake-redaction.pdf"));
+    const bytes = new Uint8Array(readFileSync(SAMPLES + "weak-redaction.pdf"));
     const report = await verifyPdf(bytes, { redactedRects: new Map(), removedValues: [FAKE.accountNo] });
     expect(report.passed).toBe(false);
     const failed = report.checks.filter((c) => !c.passed).map((c) => c.name).sort();
@@ -157,7 +175,7 @@ describe("verify can fail", () => {
   });
 
   it("redact() withholds bytes when verification fails", async () => {
-    const bytes = new Uint8Array(readFileSync(SAMPLES + "bank-statement-fake-redaction.pdf"));
+    const bytes = new Uint8Array(readFileSync(SAMPLES + "weak-redaction.pdf"));
     const result = await scan(bytes, OPTS);
     const out = await redact(result.scanId, { selectedIds: [], watermark: null });
     expect(out.verify.passed).toBe(false);

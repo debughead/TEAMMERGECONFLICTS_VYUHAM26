@@ -15,6 +15,16 @@ It ships two ways, both using one TypeScript core:
 - AI (Claude) is **optional and off by default**. It uses your own API key and receives only placeholder text (`[AADHAAR_1]`, `[NAME_1]`). The UI shows exactly what was sent.
 - The audit log records actions and keyed hashes, never the values.
 
+## Setup
+
+```sh
+pnpm install
+pnpm models   # one-time: downloads the PP-OCR models (pinned versions, SHA-256 checked) into vendor-models/
+pnpm test
+```
+
+Without `pnpm models` everything still works, but OCR falls back to Tesseract, which reads photos of ID cards poorly.
+
 ## Docs
 
 - [`docs/HLD.md`](docs/HLD.md): high- and low-level design

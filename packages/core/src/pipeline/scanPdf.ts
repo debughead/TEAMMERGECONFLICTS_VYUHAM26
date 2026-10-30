@@ -1,16 +1,17 @@
 // PDF scan: Layer 1 (forensic, metadata, revisions) + Layer 2 (IDs) + local NER, plus OCR for
 // scanned pages when an OCR engine is supplied.
 import * as mupdf from "mupdf";
-import { hiddenRuns, hiddenChars } from "../detect/forensic.ts";
+import { HIDDEN_SOURCE, HIDDEN_TEXT, hiddenRuns, hiddenChars } from "../detect/forensic.ts";
 import { findIds, maskForDisplay } from "../detect/patterns.ts";
 import { extractPdf, openPdf, type PdfExtract, type PdfPage } from "../extract/pdf.ts";
+import { embeddedImageMetadata } from "../extract/pdfImages.ts";
 import { largestImage } from "../extract/pdfFills.ts";
 import { earlierRevisions, removedText } from "../extract/pdfRevisions.ts";
 import { layerFromOcrWords, rectsForRange, type TextLayer } from "../extract/textLayer.ts";
 import type { OcrEngine } from "../ocr/engine.ts";
 import { recognizeBest } from "../ocr/preprocess.ts";
-import type { Rect } from "../schemas.ts";
-import { collectImageForensics, collectTextFindings, FindingCollector, LABEL, REASON_TEXT } from "./findings.ts";
+import type { GpsSummary, Rect } from "../schemas.ts";
+import { coarseCoord, collectImageForensics, collectTextFindings, FindingCollector, LABEL, REASON_TEXT } from "./findings.ts";
 
 export interface PdfScanOutput {
   collector: FindingCollector;
@@ -19,6 +20,8 @@ export interface PdfScanOutput {
   pageCount: number;
   warnings: string[];
   ocr: { pagesDone: number; pagesTotal: number };
+  /** From the first embedded photo with GPS tags, rounded for the map. */
+  gps: GpsSummary | null;
 }
 
 /** 300 dpi: Tesseract's preferred resolution. */
@@ -34,6 +37,8 @@ export async function scanPdf(bytes: Uint8Array, ocr: { engine: OcrEngine | null
   let ocrDone = 0;
 
   for (const page of ex.pages) {
+    // Text the visible-page pass can't see: off the page, in switched-off layers, in forms and comments.
+    scanPageStructures(page, out, layers);
     if (page.isScanned) {
       // Analyse the embedded photo at its own pixels (rendering the page would resample and blur
       // bar edges and QR modules), then map results onto the page.
@@ -59,11 +64,114 @@ export async function scanPdf(bytes: Uint8Array, ocr: { engine: OcrEngine | null
   }
   scanDocumentLevel(ex, out);
   scanRevisions(bytes, ex, out);
+  const gps = await scanEmbeddedImages(doc, out);
+  if (ex.hiddenLayerCount) warnings.push(`${ex.hiddenLayerCount} layer(s) are switched off in this PDF; their text was checked too`);
 
   return {
     collector: out, layers, pageCount: ex.pages.length, warnings,
     ocr: { pagesDone: ocrDone, pagesTotal: scanned.length },
+    gps,
   };
+}
+
+const STRUCTURE_REASON = {
+  off_page: "Text is placed outside the visible page: no viewer shows it, but it can be copied or extracted",
+  hidden_layer: "Text is in a layer that is switched off: viewers hide it, but anyone can switch the layer on",
+} as const;
+
+function scanPageStructures(page: PdfPage, out: FindingCollector, layers: TextLayer[]): void {
+  for (const [kind, layer] of [["off_page", page.offPage], ["hidden_layer", page.hiddenLayer]] as const) {
+    const visibleChars = layer.chars.filter((c) => c.c.trim()).length;
+    if (!visibleChars) continue;
+    const why = kind === "off_page" ? "is placed outside the visible page, so viewers don't show it, but it can be copied out" : "is in a switched-off layer, so viewers hide it, but anyone can turn the layer on";
+    collectTextFindings(layer, out, { baseSource: "hidden_office", reasonText: why });
+    // Report the whole stretch too: hidden text matters even when no ID pattern is in it.
+    const lines = layer.text.split("\n").map((l) => l.trim()).filter(Boolean);
+    out.add({
+      type: "hidden_content", source: "hidden_office", page: page.index, rects: rectsForRange(layer, 0, layer.text.length),
+      masked: `[${visibleChars} hidden characters]`, reason: STRUCTURE_REASON[kind], confidence: 0.95, redactable: true, detector: "forensic",
+    }, lines);
+    layers.push(layer);
+  }
+
+  if (page.formValues.length) {
+    // One line per field so detectors never join two fields. Every character gets the whole field box:
+    // where the glyphs land inside the field depends on its alignment, so remove the field's area.
+    const layer = boxedLayer(page.formValues.map((f) => ({ text: f.value, rect: f.rect })), page.index);
+    collectTextFindings(layer, out, { baseSource: "text", reasonText: "is filled into a form field" });
+    layers.push(layer);
+  }
+
+  page.comments.forEach((c) => {
+    const text = c.contents.replace(/\s+/g, " ").trim();
+    if (text) {
+      const layer = boxedLayer([{ text, rect: c.rect }], page.index);
+      // Comments aren't drawn as page text; they go when annotations are stripped, so no page areas.
+      collectTextFindings(layer, out, { baseSource: "hidden_office", reasonText: "is written in a comment on the page", noRects: true });
+      out.add({
+        type: "hidden_content", source: "hidden_office", page: page.index, rects: [],
+        masked: `Comment (${text.length} characters)`,
+        reason: "A comment holds text that isn't part of the page; anyone who opens the comments panel can read it",
+        confidence: 0.95, redactable: true, detector: "forensic",
+      }, [text]);
+      layers.push(layer);
+    }
+    if (c.author.trim()) {
+      out.add({
+        type: "metadata", source: "metadata", page: page.index, rects: [], masked: `Comment author: ${maskMeta(c.author)}`,
+        reason: "The name of whoever wrote a comment is stored with it", confidence: 1, redactable: true, detector: "metadata",
+      }, [c.author]);
+    }
+  });
+}
+
+/** A text layer with one line per item, every character mapped to its item's whole box. */
+function boxedLayer(items: { text: string; rect: Rect }[], index: number): TextLayer {
+  const layer: TextLayer = { index, text: "", textToChar: [], chars: [] };
+  items.forEach((it, k) => {
+    if (k > 0) { layer.text += "\n"; layer.textToChar.push(-1); }
+    for (const c of it.text.replace(/\s+/g, " ").trim()) {
+      layer.chars.push({ c, rect: it.rect });
+      for (let u = 0; u < c.length; u++) layer.textToChar.push(layer.chars.length - 1);
+      layer.text += c;
+    }
+  });
+  return layer;
+}
+
+/** GPS and camera details in embedded photos. Returns the first location for the map. */
+async function scanEmbeddedImages(doc: mupdf.PDFDocument, out: FindingCollector): Promise<GpsSummary | null> {
+  let gps: GpsSummary | null = null;
+  const seenTags = new Set<string>();
+  let xmpImages = 0;
+  for (const img of await embeddedImageMetadata(doc)) {
+    if (img.hasXmpStream) xmpImages++;
+    const g = img.meta.gps;
+    if (g) {
+      gps ??= { coarseLat: coarseCoord(g.lat), coarseLon: coarseCoord(g.lon) };
+      out.add({
+        type: "gps", source: "metadata", page: null, rects: [],
+        masked: `Near ${coarseCoord(g.lat).toFixed(1)}, ${coarseCoord(g.lon).toFixed(1)}`,
+        reason: "A photo inside this PDF has GPS tags revealing where it was taken (often someone's home)",
+        confidence: 1, redactable: true, detector: "metadata",
+      }, []);
+    }
+    for (const [key, value] of Object.entries(img.meta.tags)) {
+      if (seenTags.has(`${key}|${value}`)) continue; // same camera on every photo: report once
+      seenTags.add(`${key}|${value}`);
+      out.add({
+        type: "metadata", source: "metadata", page: null, rects: [], masked: `Photo ${key}: ${maskMeta(value)}`,
+        reason: `A photo inside this PDF stores its ${key} in its metadata`, confidence: 1, redactable: true, detector: "metadata",
+      }, [value]);
+    }
+  }
+  if (xmpImages) {
+    out.add({
+      type: "metadata", source: "metadata", page: null, rects: [], masked: `XMP metadata on ${xmpImages} image(s)`,
+      reason: "Images in this PDF carry their own XMP packet (author, tools, history)", confidence: 1, redactable: true, detector: "metadata",
+    }, []);
+  }
+  return gps;
 }
 
 function scanPageText(page: PdfPage, out: FindingCollector): void {
@@ -75,8 +183,8 @@ function scanPageText(page: PdfPage, out: FindingCollector): void {
     const unclaimed = page.text.slice(run.start, run.end).trim();
     if (!unclaimed || claimed.some(([s, e]) => s <= run.start && run.end <= e)) continue;
     out.add({
-      type: "hidden_content", source: run.reason, page: page.index, rects: rectsForRange(page, run.start, run.end),
-      masked: `[${unclaimed.replace(/\s/g, "").length} hidden characters]`, reason: `Text ${REASON_TEXT[run.reason]}`,
+      type: "hidden_content", source: HIDDEN_SOURCE[run.reason], page: page.index, rects: rectsForRange(page, run.start, run.end),
+      masked: `[${unclaimed.replace(/\s/g, "").length} hidden characters]`, reason: `Text ${HIDDEN_TEXT[run.reason]}`,
       confidence: 0.95, redactable: true, detector: "forensic",
     }, [unclaimed]);
   }

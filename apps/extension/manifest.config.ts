@@ -19,5 +19,7 @@ export default defineManifest({
   // MV3 minimum policy plus a network allow-list (D-027): 'wasm-unsafe-eval' lets MuPDF and Tesseract
   // compile WebAssembly, and connect-src means nothing in the extension can reach any server except
   // the Anthropic API (used only when the user turns AI on).
-  content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://api.anthropic.com;" },
+  // img-src: extension images, plus OpenStreetMap tiles for the GPS map, which loads only when the user
+  // clicks "Show approximate area" (D-036). Nothing else can load images.
+  content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://api.anthropic.com; img-src 'self' data: https://tile.openstreetmap.org;" },
 });

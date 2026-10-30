@@ -5,6 +5,11 @@ import type { OcrWord } from "../extract/textLayer.ts";
 export interface OcrEngine {
   /** Recognise a PNG; word boxes are in the PNG's pixel space. */
   recognize(png: Uint8Array): Promise<OcrWord[]>;
+  /**
+   * Whether a second pass on a locally thresholded copy helps (D-032). True for Tesseract (default);
+   * learned engines like PP-OCR handle uneven light themselves.
+   */
+  readonly binarize?: boolean | undefined;
 }
 
 /** The slice of a tesseract.js 7 Worker the adapter needs (structural, so core doesn't import tesseract.js). */

@@ -4,7 +4,7 @@ import { lastWorkerError, pingEngine, redactScan, scanFile } from "./engine/clie
 // Vite resolves these to served URLs (dev only; this page isn't in the production build).
 const SAMPLE_URLS = import.meta.glob("../../../samples/*.{pdf,png,jpg,docx}", { query: "?url", import: "default", eager: true }) as Record<string, string>;
 const urlFor = (name: string) => SAMPLE_URLS[`../../../samples/${name}`]!;
-const FILES = ["bank-statement-fake-redaction.pdf", "incremental-edit.pdf", "scanned-kyc.pdf", "aadhaar-mock.png", "gps-photo-rotated.jpg", "tracked-changes.docx"];
+const FILES = ["weak-redaction.pdf", "incremental-edit.pdf", "scanned-kyc.pdf", "aadhaar-mock.png", "gps-photo-rotated.jpg", "tracked-changes.docx"];
 // The generator's fake values, as they appear in the samples.
 const FAKE = ["000011112222", "9876543210", "ABCPE1234F", "Arjun Testkumar", "test.user@okaxis"];
 

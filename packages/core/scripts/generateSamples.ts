@@ -77,7 +77,7 @@ function bankStatement(): void {
   const text = pageText(bytes);
   assert(text.includes(FAKE.accountNo), "account number must still be extractable under the box");
   assert(text.includes(aadhaarSpaced(FAKE.aadhaar)), "aadhaar must still be extractable under the box");
-  write("bank-statement-fake-redaction.pdf", bytes, {
+  write("weak-redaction.pdf", bytes, {
     description: "Bank statement where account number and Aadhaar are covered by drawn black boxes; phone has an unapplied Redact annotation; Author metadata set.",
     expectedFindings: [
       { type: "account", source: "under_black_box", page: 0, min: 1 },
@@ -310,6 +310,201 @@ async function hiddenSheetXlsx(): Promise<void> {
   });
 }
 
+// ---------- 11. Bank statement with everything in plain view (repeats values, like real ones) ----------
+
+function exposedStatement(): void {
+  const W = 595, H = 842;
+  const doc = new mupdf.PDFDocument();
+  const regular = new mupdf.Font("Helvetica"), bold = new mupdf.Font("Helvetica-Bold");
+  const res = doc.addObject({ Font: { F1: doc.addSimpleFont(regular), F2: doc.addSimpleFont(bold) } });
+  let ops = "";
+  const rgb = (hex: string) => [1, 3, 5].map((i) => (parseInt(hex.slice(i, i + 2), 16) / 255).toFixed(3)).join(" ");
+  const width = (s: string, size: number, font: mupdf.Font) => [...s].reduce((w, ch) => w + font.advanceGlyph(font.encodeCharacter(ch.codePointAt(0)!), 0) * size, 0);
+  /** y from the top of the page, like a layout tool. */
+  const text = (x: number, y: number, size: number, s: string, o: { bold?: boolean; color?: string; right?: boolean } = {}) => {
+    const px = o.right ? x - width(s, size, o.bold ? bold : regular) : x;
+    ops += `BT ${rgb(o.color ?? "#1f2937")} rg /${o.bold ? "F2" : "F1"} ${size} Tf ${px.toFixed(2)} ${(H - y).toFixed(2)} Td ${pdfString(s)} Tj ET\n`;
+  };
+  const rect = (x: number, y: number, w: number, h: number, color: string) => { ops += `q ${rgb(color)} rg ${x} ${H - y - h} ${w} ${h} re f Q\n`; };
+  const rule = (x0: number, y: number, x1: number, color = "#e5e7eb") => { ops += `q ${rgb(color)} RG 0.6 w ${x0} ${H - y} m ${x1} ${H - y} l S Q\n`; };
+  const field = (x: number, y: number, k: string, v: string) => { text(x, y, 8, k, { color: "#6b7280" }); text(x, y + 13, 10, v); };
+  const email = "arjun.testkumar@example.com";
+  const card = "4111 1111 1111 1111"; // the standard public test card number
+
+  rect(0, 0, W, 78, "#0b3b66");
+  rect(40, 22, 34, 34, "#f5b301");
+  text(50, 46, 18, "T", { bold: true, color: "#0b3b66" });
+  text(84, 38, 17, "Fake Bank of Testing", { bold: true, color: "#ffffff" });
+  text(84, 56, 9, "Specimen - fake data for RedactGuard demos - not a real bank", { color: "#cbd5e1" });
+  text(555, 38, 11, "Statement of Account", { bold: true, color: "#ffffff", right: true });
+  text(555, 56, 9, "01 Jul 2026 - 30 Sep 2026", { color: "#cbd5e1", right: true });
+
+  text(40, 108, 11, "Customer details", { bold: true, color: "#0b3b66" }); rule(40, 115, 290, "#0b3b66");
+  field(40, 132, "Account holder", FAKE.name);
+  field(40, 162, "Address", "House No 12, Test Nagar,"); text(40, 188, 10, "Kochi, Kerala 682001");
+  field(40, 206, "Mobile", `+91 ${FAKE.phone}`); field(170, 206, "Email", email);
+  field(40, 236, "PAN", FAKE.pan); field(170, 236, "Aadhaar (linked)", aadhaarSpaced(FAKE.aadhaar));
+  text(320, 108, 11, "Account details", { bold: true, color: "#0b3b66" }); rule(320, 115, 555, "#0b3b66");
+  field(320, 132, "Account No", FAKE.accountNo); field(450, 132, "IFSC", FAKE.ifsc);
+  field(320, 162, "Account type", "Savings - Salary"); field(450, 162, "Customer ID", "CUST-88213");
+  field(320, 192, "Branch", "MG Road, Kochi"); field(450, 192, "UPI ID", FAKE.upi);
+  field(320, 222, "Debit card", card); field(450, 222, "Nominee", "Meera Testkumar");
+
+  const tile = (x: number, k: string, v: string, color: string) => {
+    rect(x, 268, 120, 46, "#f3f6fa"); rect(x, 268, 3, 46, color);
+    text(x + 12, 285, 8, k, { color: "#6b7280" }); text(x + 12, 304, 12, v, { bold: true });
+  };
+  tile(40, "Opening balance", "Rs 1,12,430.55", "#64748b");
+  tile(169, "Total credits", "Rs 2,63,500.00", "#059669");
+  tile(298, "Total debits", "Rs 1,51,862.40", "#dc2626");
+  tile(427, "Closing balance", "Rs 2,24,068.15", "#0b3b66");
+
+  const col = { date: 46, desc: 105, ref: 316, debit: 425, credit: 489, bal: 551 };
+  let y = 342;
+  rect(40, y, 515, 20, "#0b3b66");
+  for (const [x, h, right] of [[col.date, "Date", false], [col.desc, "Description", false], [col.ref, "Reference", false], [col.debit, "Debit", true], [col.credit, "Credit", true], [col.bal, "Balance", true]] as const) {
+    text(x, y + 13, 8.5, h, { bold: true, color: "#ffffff", right });
+  }
+  y += 20;
+  const rows: [string, string, string, string, string, string][] = [
+    ["01-07-2026", "SALARY CREDIT TESTCORP PVT LTD JUL", "NEFT-TC0701", "", "87,500.00", "1,99,930.55"],
+    ["03-07-2026", "RENT PAYMENT - LANDLORD S KUMAR", "IMPS-55120", "22,000.00", "", "1,77,930.55"],
+    ["07-07-2026", `UPI/${FAKE.upi}/MEERA T`, "UPI-830112", "5,000.00", "", "1,72,930.55"],
+    ["12-07-2026", "APOLLO TEST HOSPITAL - ONCOLOGY OPD", "POS-77120", "18,450.00", "", "1,54,480.55"],
+    ["18-07-2026", `CREDIT CARD BILL ${card}`, "BILLPAY-221", "31,206.00", "", "1,23,274.55"],
+    ["01-08-2026", "SALARY CREDIT TESTCORP PVT LTD AUG", "NEFT-TC0801", "", "87,500.00", "2,10,774.55"],
+    ["05-08-2026", "LIC PREMIUM POLICY 99812345", "ECS-44012", "12,300.00", "", "1,98,474.55"],
+    ["14-08-2026", "PHARMACY - INSULIN REFILL", "POS-77561", "3,906.40", "", "1,94,568.15"],
+    ["22-08-2026", "HOME LOAN EMI - LOAN AC 7781200045", "ECS-44101", "41,000.00", "", "1,53,568.15"],
+    ["01-09-2026", "SALARY CREDIT TESTCORP PVT LTD SEP", "NEFT-TC0901", "", "87,500.00", "2,41,068.15"],
+    ["09-09-2026", "MUTUAL FUND SIP - FOLIO 55120034", "ACH-90031", "10,000.00", "", "2,31,068.15"],
+    ["30-09-2026", "INTEREST CREDIT", "INT-Q2", "", "1,000.00", "2,24,068.15"],
+  ];
+  rows.forEach((r, i) => {
+    if (i % 2) rect(40, y, 515, 22, "#f8fafc");
+    text(col.date, y + 14, 8.5, r[0]); text(col.desc, y + 14, 8.5, r[1]); text(col.ref, y + 14, 8, r[2], { color: "#6b7280" });
+    if (r[3]) text(col.debit, y + 14, 8.5, r[3], { color: "#b91c1c", right: true });
+    if (r[4]) text(col.credit, y + 14, 8.5, r[4], { color: "#047857", right: true });
+    text(col.bal, y + 14, 8.5, r[5], { right: true });
+    y += 22;
+  });
+  rule(40, y, 555);
+  text(40, y + 26, 8, "This is a computer-generated statement and does not require a signature.", { color: "#6b7280" });
+  text(40, y + 38, 8, `Alerts go to ${FAKE.phone} and ${email}.`, { color: "#6b7280" });
+  rect(0, H - 34, W, 34, "#f3f6fa");
+  text(40, H - 14, 8, "Fake Bank of Testing - specimen document for privacy-tool demos. All names and numbers are invented.", { color: "#6b7280" });
+
+  doc.insertPage(-1, doc.addPage([0, 0, W, H], 0, res, ops));
+  doc.setMetaData("info:Author", FAKE.name);
+  doc.setMetaData("info:Creator", "FakeBank NetBanking");
+  const bytes = bytesOf(doc, "compress");
+  const t = pageText(bytes);
+  assert(t.includes(FAKE.pan) && t.includes(aadhaarSpaced(FAKE.aadhaar)) && t.includes(card), "statement must expose its IDs in plain text");
+  write("bank-statement-exposed.pdf", bytes, {
+    description: "Realistic bank statement with every detail in plain view (nothing hidden). Values repeat (UPI, card, phone, email) as on real statements; the loan account is labelled 'AC'.",
+    expectedFindings: [
+      { type: "aadhaar", source: "text", page: 0, min: 1 },
+      { type: "pan", source: "text", page: 0, min: 1 },
+      { type: "card", source: "text", page: 0, min: 1 },
+      { type: "account", source: "text", page: 0, min: 2 },
+      { type: "phone", source: "text", page: 0, min: 1 },
+      { type: "email", source: "text", page: 0, min: 1 },
+      { type: "upi", source: "text", page: 0, min: 1 },
+      { type: "name", source: "text", page: 0, min: 1 },
+      { type: "address", source: "text", page: 0, min: 1 },
+      { type: "salary", source: "text", page: 0, min: 1 },
+      { type: "metadata", source: "metadata", page: null, min: 1 },
+    ],
+    notExpected: [{ type: "hidden_content" }],
+  });
+}
+
+// ---------- 12. A GPS-tagged photo inside a PDF (the JPEG keeps its EXIF) ----------
+
+function photoWithGpsPdf(): void {
+  const content =
+    "q 0.45 0.7 0.92 rg 0 0 600 400 re f Q q 0.34 0.62 0.3 rg 0 0 600 130 re f Q q 0.96 0.93 0.86 rg 180 120 240 150 re f Q\n" +
+    "q 0.69 0.25 0.19 rg 160 270 m 300 360 l 440 270 l f Q\n" + textOp(20, 370, 16, "Our new home - fake test photo");
+  const jpeg = renderPage(600, 400, content, 1).asJPEG(88).slice();
+  const exif = piexif.dump({
+    "0th": { [piexif.ImageIFD.Make]: FAKE.camera.make, [piexif.ImageIFD.Model]: FAKE.camera.model },
+    Exif: { [piexif.ExifIFD.DateTimeOriginal]: "2026:10:12 18:42:07" },
+    GPS: {
+      [piexif.GPSIFD.GPSLatitudeRef]: "N", [piexif.GPSIFD.GPSLatitude]: piexif.GPSHelper.degToDmsRational(FAKE.gps.lat),
+      [piexif.GPSIFD.GPSLongitudeRef]: "E", [piexif.GPSIFD.GPSLongitude]: piexif.GPSHelper.degToDmsRational(FAKE.gps.lon),
+    },
+  });
+  const tagged = fromBinary(piexif.insert(exif, toBinary(jpeg)));
+  const doc = new mupdf.PDFDocument();
+  const img = doc.addImage(new mupdf.Image(tagged));
+  const resources = doc.addObject({ XObject: { Im0: img } });
+  doc.insertPage(-1, doc.addPage([0, 0, 842, 595], 0, resources, "q 720 0 0 480 61 57 cm /Im0 Do Q\n"));
+  const bytes = bytesOf(doc, "compress");
+  const check = new mupdf.PDFDocument(bytes);
+  let exifKept = false;
+  for (let n = 1; n < check.countObjects(); n++) {
+    const ref = check.newIndirect(n);
+    if (ref.isStream() && toBinary(ref.readRawStream().asUint8Array()).includes("Exif")) exifKept = true;
+  }
+  assert(exifKept, "the embedded JPEG must keep its EXIF block");
+  write("photo-with-gps.pdf", bytes, {
+    description: "PDF holding one photo whose JPEG still carries EXIF: fake GPS (Kochi city centre), camera make/model and time.",
+    expectedFindings: [
+      { type: "gps", source: "metadata", page: null, min: 1 },
+      { type: "metadata", source: "metadata", page: null, min: 1 },
+    ],
+  });
+}
+
+// ---------- 13. Photo of a PAN-style card with nothing blacked out (patterned background, noise) ----------
+
+function idCardPhoto(): void {
+  const W = 856, H = 540; // credit-card ratio
+  let ops = "";
+  // Pale blue card with a wavy guilloche-like pattern: the kind of background that defeats Tesseract.
+  ops += "q 0.80 0.90 0.97 rg 0 0 856 540 re f Q\n";
+  for (let k = 0; k < 28; k++) {
+    let path = `q 0.55 0.72 0.88 RG 1.1 w 0 ${20 + k * 19} m `;
+    for (let x = 0; x <= W; x += 16) path += `${x} ${(20 + k * 19 + 7 * Math.sin((x + k * 23) / 37)).toFixed(1)} l `;
+    ops += path + "S Q\n";
+  }
+  ops += "q 0.93 0.95 0.98 rg 40 230 150 190 re f Q\n"; // photo placeholder
+  ops += "q 0.62 0.67 0.74 rg 80 290 70 70 re f Q\n";
+  const t = (x: number, y: number, size: number, str: string, bold = false) =>
+    `BT 0.10 0.12 0.22 rg /${bold ? "F2" : "F1"} ${size} Tf ${x} ${y} Td ${pdfString(str)} Tj ET\n`;
+  ops += t(40, 485, 28, "INCOME TAX DEPARTMENT", true) + t(560, 485, 26, "GOVT. OF INDIA", true);
+  ops += t(300, 440, 18, "Permanent Account Number Card") + t(330, 395, 30, FAKE.pan, true);
+  ops += t(40, 190, 16, "Name") + t(40, 160, 22, FAKE.name.toUpperCase(), true);
+  ops += t(40, 120, 16, "Father's Name") + t(40, 90, 22, "RAVI TESTKUMAR", true);
+  ops += t(40, 50, 16, "Date of Birth") + t(40, 20, 22, "05/12/1990", true);
+  ops += t(560, 60, 16, "SPECIMEN - FAKE TEST CARD");
+
+  const doc = new mupdf.PDFDocument();
+  const res = doc.addObject({ Font: { F1: doc.addSimpleFont(new mupdf.Font("Helvetica")), F2: doc.addSimpleFont(new mupdf.Font("Helvetica-Bold")) } });
+  doc.insertPage(-1, doc.addPage([0, 0, W, H], 0, res, ops));
+  const pix = doc.loadPage(0).toPixmap(mupdf.Matrix.scale(1.6, 1.6), mupdf.ColorSpace.DeviceRGB, false);
+  // "Photographed": uneven light across the card plus sensor noise (seeded, so the sample is stable).
+  const px = pix.getPixels(), stride = pix.getStride(), w = pix.getWidth(), h = pix.getHeight();
+  let seed = 1234567;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) - 0.5;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const light = 0.82 + 0.22 * (x / w) - 0.08 * (y / h);
+    for (let c = 0; c < 3; c++) {
+      const i = y * stride + x * 3 + c;
+      px[i] = Math.max(0, Math.min(255, Math.round(px[i]! * light + rnd() * 26)));
+    }
+  }
+  const jpeg = pix.asJPEG(72).slice();
+  write("pan-card-photo.jpg", jpeg, {
+    description: "Photo of a fake PAN-style card (patterned background, uneven light, noise, JPEG 72) with the number, name, father's name and date of birth unredacted. Needs OCR that copes with photos.",
+    expectedFindings: [
+      { type: "pan", source: "ocr", page: 0, min: 1 },
+      { type: "name", source: "ocr", page: 0, min: 2 },
+      { type: "other", source: "ocr", page: 0, min: 1 },
+    ],
+  });
+}
+
 bankStatement();
 incrementalEdit();
 aadhaarMock();
@@ -320,4 +515,7 @@ darkImageOverText();
 promptInjection();
 await trackedChangesDocx();
 await hiddenSheetXlsx();
+exposedStatement();
+photoWithGpsPdf();
+idCardPhoto();
 console.log("all samples generated and self-checked");

@@ -7,6 +7,7 @@ import { findIds } from "./detect/patterns.ts";
 import { decodeUpright, readImageMeta } from "./extract/image.ts";
 import { extractDocx, extractXlsx, openZip } from "./extract/office.ts";
 import { extractPdf, openPdf } from "./extract/pdf.ts";
+import { embeddedImageMetadata } from "./extract/pdfImages.ts";
 import type { OcrWord } from "./extract/textLayer.ts";
 import type { OcrEngine } from "./ocr/engine.ts";
 import { recognizeBest } from "./ocr/preprocess.ts";
@@ -55,7 +56,15 @@ export async function verifyPdf(output: Uint8Array, exp: VerifyExpectations, ocr
 
   let inRedacted = 0;
   let stillHidden = 0;
-  let allText = ex.pages.map((p) => p.text).join("\n");
+  // Everything extractable counts, not just what a viewer shows: off-page and hidden-layer text,
+  // form values and comment text are all places a removed value could survive.
+  let allText = ex.pages.flatMap((p) => [
+    p.text, p.offPage.text, p.hiddenLayer.text, ...p.formValues.map((f) => f.value), ...p.comments.map((c) => c.contents),
+  ]).join("\n");
+  const visible = (t: { chars: { c: string }[] }) => t.chars.filter((c) => c.c.trim()).length;
+  const offPageChars = ex.pages.reduce((n, p) => n + visible(p.offPage), 0);
+  const hiddenLayerChars = ex.pages.reduce((n, p) => n + visible(p.hiddenLayer), 0);
+  const formFields = ex.pages.reduce((n, p) => n + p.formValues.length, 0);
   let ocrPages = 0;
   let pixelLeakCount = 0;
   const pixelLeakDetail: string[] = [];
@@ -82,16 +91,21 @@ export async function verifyPdf(output: Uint8Array, exp: VerifyExpectations, ocr
       ocrPages++;
     }
   }
+  stillHidden += offPageChars + hiddenLayerChars;
   const remaining = remainingValues(allText, exp.removedValues);
   const annotCount = ex.pages.reduce((s, p) => s + p.annots.length, 0);
   const metaKeys = Object.keys(ex.info);
   const scannedUnread = ex.pages.filter((p) => p.isScanned).length - ocrPages;
+  const imageMeta = await embeddedImageMetadata(doc);
+  const imagesWithGps = imageMeta.filter((m) => m.meta.gps).length;
 
   const checks: VerifyCheck[] = [
     {
       name: "no_text_in_redacted_areas",
-      passed: inRedacted === 0 && stillHidden === 0 && pixelLeakCount === 0,
-      detail: `${inRedacted} character(s)/word(s) inside redacted areas; ${stillHidden} character(s) still hidden under boxes` +
+      passed: inRedacted === 0 && stillHidden === 0 && pixelLeakCount === 0 && ex.hiddenLayerCount === 0,
+      detail: `${inRedacted} character(s)/word(s) inside redacted areas; ${stillHidden} character(s) still hidden` +
+        (offPageChars || hiddenLayerChars ? ` (${offPageChars} off the page, ${hiddenLayerChars} in switched-off layers)` : "") +
+        (ex.hiddenLayerCount ? `; ${ex.hiddenLayerCount} layer(s) still switched off` : "") +
         (pixelLeakDetail.length ? `; ${pixelLeakDetail.join("; ")}` : "") +
         (scannedUnread > 0 ? `; ${scannedUnread} scanned page(s) not re-read (OCR off)` : ""),
     },
@@ -104,12 +118,18 @@ export async function verifyPdf(output: Uint8Array, exp: VerifyExpectations, ocr
     { name: "single_revision", passed: ex.versions === 1, detail: `${ex.versions} revision(s) in the file` },
     {
       name: "no_annots_embeds_js",
-      passed: annotCount === 0 && !ex.hasEmbeddedFiles && !ex.hasJavaScript,
-      detail: `${annotCount} annotation(s); embedded files: ${ex.hasEmbeddedFiles ? "yes" : "no"}; scripts/actions: ${ex.hasJavaScript ? "yes" : "no"}`,
+      passed: annotCount === 0 && formFields === 0 && !ex.hasEmbeddedFiles && !ex.hasJavaScript,
+      detail: `${annotCount} annotation(s); ${formFields} form field value(s); embedded files: ${ex.hasEmbeddedFiles ? "yes" : "no"}; scripts/actions: ${ex.hasJavaScript ? "yes" : "no"}`,
     },
-    NA("no_image_metadata", "PDF output"),
+    {
+      name: "no_image_metadata",
+      passed: imageMeta.length === 0,
+      detail: imageMeta.length
+        ? `${imageMeta.length} embedded image(s) still carry metadata${imagesWithGps ? `, ${imagesWithGps} with GPS` : ""}`
+        : "No EXIF/XMP/IPTC tags or GPS in embedded images",
+    },
   ];
-  return report(checks, inRedacted + stillHidden + remaining + pixelLeakCount, output);
+  return report(checks, inRedacted + stillHidden + remaining + pixelLeakCount + imageMeta.length, output);
 }
 
 export async function verifyImage(output: Uint8Array, exp: VerifyExpectations, ocr: OcrEngine | null = null): Promise<VerifyReport> {

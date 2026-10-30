@@ -102,7 +102,7 @@ for (let i = 0; i < doc.countPages(); i++) {
 1. Normalize everything into `ExtractResult { pages: [{ words, fills, images, annots, isScanned }], metadata, revisions }`.
 2. Store word rects in PDF points, top-left origin. Pick this convention once and document it.
 
-**Verify:** golden test on `samples/bank-statement-fake-redaction.pdf`. The expected words and at least one dark fill are present.
+**Verify:** golden test on `samples/weak-redaction.pdf`. The expected words and at least one dark fill are present.
 **Pitfalls:** coordinate systems. MuPDF, PDF.js and canvases use different origins and scales; convert in one place only.
 
 ---

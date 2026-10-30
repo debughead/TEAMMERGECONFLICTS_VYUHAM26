@@ -25,6 +25,7 @@ export * from "./schemas.ts";
 export { LIMITS, LimitError } from "./filetype.ts";
 export { dropSession } from "./session.ts";
 export { tesseractEngine, type OcrEngine, type TesseractWorkerLike } from "./ocr/engine.ts";
+export { paddleEngine, withFallback, type OnnxSessionLike, type PaddleModels } from "./ocr/paddle.ts";
 export { AI_MODEL, type AiClient, type AiRequest } from "./ai/schema.ts";
 export { appendAudit, generateAuditKey, verifyChain, memoryAuditStore, type AuditStore, type AuditInput, type ChainCheck } from "./audit/chain.ts";
 
@@ -52,7 +53,7 @@ export async function scan(bytes: Uint8Array, options: ScanOptions, deps: CoreDe
 
   if (fileType === "pdf") {
     const out = await scanPdf(bytes, { engine: ocr, pageCap: opts.ocrPageCap });
-    ({ collector, layers, pageCount, warnings } = out);
+    ({ collector, layers, pageCount, warnings, gps } = out);
     ocrStatus = out.ocr;
   } else if (fileType === "jpeg" || fileType === "png" || fileType === "webp") {
     const out = await scanImage(bytes, ocr);

@@ -1,5 +1,5 @@
 {
-  "file": "bank-statement-fake-redaction.pdf",
+  "file": "weak-redaction.pdf",
   "description": "Bank statement where account number and Aadhaar are covered by drawn black boxes; phone has an unapplied Redact annotation; Author metadata set.",
   "expectedFindings": [
     {
