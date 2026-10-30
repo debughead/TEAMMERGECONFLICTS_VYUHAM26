@@ -1,0 +1,44 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test *)",
+      "Bash(pnpm run *)",
+      "Bash(pnpm --filter * test *)",
+      "Bash(pnpm --filter * build *)",
+      "Bash(pnpm -r exec tsc *)",
+      "Bash(pnpm exec vitest *)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)"
+    ],
+    "ask": [
+      "Bash(pnpm add *)",
+      "Bash(pnpm remove *)",
+      "Bash(pnpm update *)",
+      "Bash(pnpm install *)",
+      "Bash(npm install *)",
+      "Bash(npx *)",
+      "Bash(pnpm dlx *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git reset *)",
+      "Bash(git rebase *)",
+      "Bash(git checkout *)",
+      "Bash(git branch -D *)",
+      "Bash(rm *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Edit(/CLAUDE.md)",
+      "Edit(/packages/core/src/schemas.ts)",
+      "Edit(/apps/extension/manifest*)",
+      "Edit(/docs/DECISIONS.md)",
+      "Edit(/samples/**/*.expected.json)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
+    ]
+  }
+}
