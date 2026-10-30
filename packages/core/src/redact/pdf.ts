@@ -81,7 +81,7 @@ function quadsBounds(quads: mupdf.Quad[]): Rect {
 function hasOffPageText(page: mupdf.PDFPage): boolean {
   const b = page.getBounds();
   let found = false;
-  page.toStructuredText("mediabox-clip=no").walk({
+  page.toStructuredText("clip=no").walk({
     onChar(_c, _o, _f, _s, quad) {
       const cx = (quad[0] + quad[6]) / 2, cy = (quad[1] + quad[7]) / 2;
       if (cx < b[0] || cx > b[2] || cy < b[1] || cy > b[3]) found = true;
