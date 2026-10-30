@@ -19,8 +19,8 @@ The easiest start: in the Web Lab, open **Company policy → Download the exampl
 }
 ```
 
-- `internalDomains`: sites that count as **inside** the company: the host itself or any subdomain (`acme.example` covers `hr.acme.example`). Every other site is **outside**. In the Web Lab you choose inside/outside per scan.
-- `dictionaries`: your own word lists (codenames, client names, product names). Matching is whole-word and ignores case.
+- `internalDomains`: sites that count as **inside** the company: the host itself or any subdomain (`acme.example` covers `hr.acme.example`). Every other site is **outside**. A top-level domain alone (`com`) is refused. In the Web Lab you choose inside/outside per scan.
+- `dictionaries`: your own word lists (codenames, client names, product names). Matching is whole-word and ignores case. A space, a hyphen or a line break between words all match ("pay slip" finds "Pay-slip"), and the last word may be plural ("payslip" finds "Payslips"). Accents, invisible characters (zero-width spaces, soft hyphens) and look-alike Cyrillic/Greek letters don't hide a term. The same matching applies to `keywords` and `markings`.
 
 ## A rule
 
@@ -45,7 +45,7 @@ The easiest start: in the Web Lab, open **Company policy → Download the exampl
 | `{ "labels": ["Employee ID", …] }` | has a field with that label ("Employee ID: …", or the label alone on a line) |
 | `{ "findings": ["salary", …] }` | contains something RedactGuard itself detected, by type (below) |
 | `{ "dictionary": "codenames" }` | mentions any term from that dictionary |
-| `{ "markings": ["CONFIDENTIAL", …] }` | carries that marking (headers, footers, stamps) |
+| `{ "markings": ["CONFIDENTIAL", …] }` | carries that marking (headers, footers, stamps): written in capitals, or opening a line on its own ("Confidential – do not forward"). The word in an ordinary sentence ("we keep your data confidential") or negated ("NON-CONFIDENTIAL") doesn't count |
 | `{ "pattern": "…" }` | matches a regular expression (see the limits below) |
 
 - `remove` lists what the rule covers:
@@ -55,10 +55,10 @@ The easiest start: in the Web Lab, open **Company policy → Download the exampl
 | `{ "types": ["name", "pan", …] }` | everything RedactGuard detected of those types |
 | `{ "dictionary": "clients", "label": "Client" }` | every occurrence of the dictionary's terms |
 | `{ "pattern": "…", "label": "Employee ID" }` | every match of the pattern (`label` names it in the list) |
-| `{ "labels": ["Performance Rating", …] }` | the value written next to those labels |
-| `{ "detect": "amounts" }` | money amounts (Rs/₹/$/€ amounts, 1,12,430.55) |
-| `{ "detect": "secrets" }` | API keys, tokens, private keys, "password: …" values |
-| `{ "detect": "internal_links" }` | links to your internal domains, intranet names and private network addresses |
+| `{ "labels": ["Performance Rating", …] }` | the value written next to those labels, to the end of the line, and on to the next lines while the text clearly continues (the line ends mid-sentence or the next starts in lower case). Labels are whole words: "ID" doesn't match inside "PAID" |
+| `{ "detect": "amounts" }` | money amounts (Rs/₹/$/€ amounts, 1,12,430.55, "50,000 INR", and grouped numbers right after a pay word such as "Basic Salary 45,000") |
+| `{ "detect": "secrets" }` | API keys (AWS, Stripe, GitHub, Slack, Google, OpenAI/Anthropic-style), tokens, private keys, connection-string passwords, and values after a credential name (`password: …`, `Password - …`, `"client_secret": "…"`, `aws_secret_access_key = …`); a passphrase with spaces is covered in full |
+| `{ "detect": "internal_links" }` | links (http, https, ssh, git, ftp, sftp, smb) to your internal domains, intranet names (`.corp`, `.internal`…), private network addresses with or without `http://`, and `\\server\share` paths |
 
 Finding types: `aadhaar`, `pan`, `card`, `ifsc`, `upi`, `phone`, `email`, `vehicle`, `name`, `address`, `medical`, `salary`, `account`, `gps`, `metadata`, `hidden_content`, `old_version`, `other`.
 
@@ -66,7 +66,7 @@ Finding types: `aadhaar`, `pan`, `card`, `ifsc`, `upi`, `phone`, `email`, `vehic
 
 | Action | Effect |
 |---|---|
-| `remove` | the covered items are pre-ticked for removal |
+| `remove` | the covered items are pre-ticked for removal. If the file type can't remove one (Word/Excel body text), the file is blocked instead: export it to PDF and scan that |
 | `block` | the file can't be shared at all: no cleaned copy, no "upload the original anyway" |
 | `review` | the covered items are pre-ticked and flagged for a person to check |
 | `keep` | allowed: the covered items are left unticked |
@@ -83,7 +83,7 @@ When several rules cover the same item, the strictest action wins (block > remov
 ## Limits (checked when you upload)
 
 - File size up to 256 KB; up to 100 rules; up to 2,000 terms per dictionary.
-- Patterns: up to 200 characters, no back-references, and no nested repetition like `(a+)+`. Each pattern is also timed on long hostile text and refused if it's slow, because some patterns can freeze a scan.
+- Patterns: up to 200 characters, no back-references, no nested repetition like `(a+)+`, no repeated group with alternatives like `(a|b)+` (use a character class, `[ab]+`), and no open-ended wildcard like `.*`, `[\s\S]*` or `[^,]+` (give it a limit, like `.{0,100}`). Each pattern is also timed on long hostile text and refused if it's slow, because some patterns can freeze a scan. Patterns ignore case.
 - Every dictionary a rule names must exist, and rule `id`s must be unique.
 
 If a policy is refused, the reason is shown with the path to the problem (for example `rules.2 (hr-records): dictionary "codenames" isn't defined`).

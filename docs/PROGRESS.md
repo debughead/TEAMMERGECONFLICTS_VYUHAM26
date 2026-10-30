@@ -2,7 +2,7 @@
 
 Claude Code keeps this file current. Humans can edit it too; Claude reads it at the start of every task and on `/status`.
 
-**Last updated:** 2026-10-31 · **Overall:** Phase 0, 0b, PP-OCR and Phase 1 (company policies) merged; phase-0 edge cases fixed (D-041–D-043); 1 known synthetic QR test fails
+**Last updated:** 2026-10-31 · **Overall:** Phase 0, 0b, PP-OCR and Phase 1 (company policies) merged; phase-0 edge cases fixed (D-041–D-043); phase-1 policy edge cases fixed (D-044, branch `fix/company_policy_bugs_fixes`); 1 known synthetic QR test fails
 
 ## Spikes (hours 0–2): must pass before building on them
 
@@ -28,6 +28,7 @@ Claude Code keeps this file current. Humans can edit it too; Claude reads it at 
 
 ## Done
 
+- 2026-10-31 Phase-1 policy edge cases (D-044): all 41 of a teammate's policy edge tests pass (30 failed before). Terms survive invisible characters, accents, look-alike letters, hyphens and plurals; markings need capitals or a line of their own and ignore "NON-"; whole-word labels and full values; more amount, secret and internal-link formats; the pattern guard refuses freezing and stalling shapes without running them; `com` refused as an internal domain; Word/Excel files a policy says to clean are blocked. Tests: `test/edge3.test.ts`, `test/probes/`
 - 2026-10-31 Phase-0 edge cases (D-041): all 98 of a teammate's edge tests pass (58 failed before). ID formats, OCR PAN repair, dates of birth, salary/PIN/name rules, AI prompt and reply hardening, PDF header search, JPEG thumbnails, OCR fallback, Word headers/footers/text boxes/white text, Excel quirks, Office custom properties and thumbnails, identity kit with email/date of birth. Page rules ignore the domain (D-042); audit chain has a signed head that catches deleted newest rows (D-043). Guard tests `test/edgeFixes.test.ts`; Web Lab self-test in headless Brave passes, including the audit chain
 - 2026-10-31 Phase 0 (D-034): off-page text, switched-off layers, invisible (same-colour/tiny) text, form values, comments, and GPS/camera metadata in photos inside PDFs are all detected, removed and checked by verify(). `samples/` renamed and tests updated; new samples `bank-statement-exposed.pdf` and `photo-with-gps.pdf`
 - 2026-10-31 Company-policy edge cases (D-040): 11 problems found by a 27-case probe and fixed (incl. comment redaction damaging page text, wrapped terms, 2,000-term dictionary 5.9 s → 14 ms, Word/Excel text rules); permanent edge-case test
