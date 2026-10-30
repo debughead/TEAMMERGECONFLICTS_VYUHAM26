@@ -263,6 +263,27 @@ function icon(name: string, size = 16): SVGSVGElement {
   return svg;
 }
 
+/** The RedactGuard mark (shield, page, redaction bar), same geometry as the extension icon. */
+function logo(size = 18): SVGSVGElement {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 128 128");
+  svg.setAttribute("width", String(size));
+  svg.setAttribute("height", String(size));
+  svg.setAttribute("aria-hidden", "true");
+  const shape = (tag: string, attrs: Record<string, string>) => {
+    const el = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    svg.append(el);
+  };
+  shape("path", { d: "M64 8 L112 24 L112 60 C112 92 92 112 64 122 C36 112 16 92 16 60 L16 24 Z", fill: "#163A5F" });
+  shape("rect", { x: "38", y: "32", width: "52", height: "64", rx: "7", fill: "#FFFFFF" });
+  shape("rect", { x: "46", y: "44", width: "36", height: "6", rx: "3", fill: "#9AA7B6" });
+  shape("rect", { x: "46", y: "57", width: "36", height: "12", rx: "2", fill: "#1B2A3A" });
+  shape("rect", { x: "46", y: "78", width: "28", height: "6", rx: "3", fill: "#9AA7B6" });
+  return svg;
+}
+
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...kids: (Node | string | null)[]): HTMLElementTagNameMap[K] {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
@@ -293,9 +314,7 @@ const card = (() => {
     const x = h("button", { class: "x", "aria-label": "Close" }, "×");
     x.addEventListener("click", close);
     const brand = h("span", {}, h("b", {}, "RedactGuard"), " checked this file on your device");
-    const shield = icon("shield");
-    shield.style.color = C.navy;
-    return h("div", { class: "head" }, shield, brand, x);
+    return h("div", { class: "head" }, logo(18), brand, x);
   };
 
   function show(state: CardState): void {

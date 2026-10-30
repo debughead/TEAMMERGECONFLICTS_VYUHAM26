@@ -42,7 +42,11 @@ export interface PdfExtract {
 
 export const INFO_KEYS = ["Title", "Author", "Subject", "Keywords", "Creator", "Producer", "CreationDate", "ModDate"] as const;
 const SCANNED_MAX_CHARS = 20;
-const SCANNED_MIN_IMAGE_COVER = 0.8;
+/**
+ * A photo saved as PDF often sits unscaled on the page: macOS Preview puts a landscape card photo on
+ * portrait A4 at ~40% cover. Any sizeable image on a page without text gets OCR (D-031).
+ */
+const SCANNED_MIN_IMAGE_COVER = 0.15;
 
 export function openPdf(bytes: Uint8Array): mupdf.PDFDocument {
   const doc = new mupdf.PDFDocument(bytes);

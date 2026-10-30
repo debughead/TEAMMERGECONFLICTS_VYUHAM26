@@ -40,6 +40,7 @@ Only calls confirmed against the installed version go here. If a call isn't list
 | pdfjs-dist | 6.4.299 | `getDocument({ data })` → task; `task.promise`, `task.destroy()`; `page.getViewport({ scale })`; `page.render({ canvas, viewport })` | `isEvalSupported` and `PDFDocumentProxy.destroy` no longer exist in v6 | types/src/display/api.d.ts + Web Lab build | 2026-10-30 |
 | @anthropic-ai/sdk | 1.3.0 | `new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries, timeout })`, `client.beta.messages.create({ model, max_tokens, system, messages, output_config: { effort, format }, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" })`, `stop_reason === "refusal"` | Typechecks against the installed SDK; no live call made (no key) | client.d.ts, resources/(beta/)messages.d.ts | 2026-10-30 |
 | comlink / idb | 4.4.2 / 8.0.4 | `wrap`, `expose`, `transfer`; `openDB(name, v, { upgrade })`, `store.openCursor(null, "prev")`, `add`, `getAll` | Used in the engine worker and IndexedDB audit store | d.ts + browser self-test | 2026-10-30 |
+| mupdf | 1.28.1 | `Document.openDocument(svgBytes, "image/svg+xml")` | **Not supported in this build** (throws); icons are drawn as PDF vector operators instead | scripts/makeIcons.ts probe | 2026-10-30 |
 
 ## Known to need checking (from the design docs, not yet verified)
 

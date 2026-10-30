@@ -70,7 +70,7 @@ export function Panel() {
   return (
     <div className="min-h-screen bg-white text-[#1B2A3A] [font-family:system-ui,-apple-system,'Segoe_UI',Roboto,sans-serif]">
       <header className="flex items-center gap-2 border-b border-[#E2E7EE] px-4 py-3">
-        <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden className="text-[#163A5F]"><path d="M8 1.5 2.5 3.5v4c0 3.4 2.3 5.9 5.5 7 3.2-1.1 5.5-3.6 5.5-7v-4L8 1.5Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
+        <img src="/icons/icon32.png" width="20" height="20" alt="" />
         <h1 className="text-[15px] font-semibold">RedactGuard</h1>
         <span className="ml-auto text-xs text-[#5A6676]">Everything runs on this device</span>
       </header>

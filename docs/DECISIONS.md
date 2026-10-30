@@ -156,3 +156,26 @@ Consequences: the spec PDF now scans with only true findings, and redaction pass
 ## D-029: Extension UI redesign and selectable redaction (2026-10-30, approved by user)
 Decision: "clean security product" look for the card and side panel. Verdict band, 10-segment exposure meter, findings grouped by why they're risky, working checkboxes in both places, and a live "the site will get…" line. The side panel's "Redact selected and upload" redacts in the offscreen engine and hands the verified file to the page (`panel-redact` → `attach-safe`). Only the side panel page may send `panel-redact`; e2e builds also accept it opened as a tab, so tests can drive it.
 Consequences: verified in headless Brave via the DevTools protocol (screenshots, plus the panel path removing only the ticked items). The production bundle contains no e2e relaxation.
+
+## D-030: Photo forensics for images and image-only PDF pages (2026-10-30, approved by user; QR decoder declined)
+Context: a real PAN-card photo with black bars painted over the details scanned as "0 findings, allow". The image pipeline only looked at OCR text and EXIF. A PDF made from the same photo (macOS Preview, rotated 90° on A4) behaved the same.
+Decision: `detect/imageForensics.ts` + `detect/idCards.ts`, run on photos and on image-only PDF pages (analysing the embedded image at its native pixels, mapped to the page with the full placement transform):
+- Redaction bars are found row by row (straight-edged near-black runs), then checked for (a) translucency and (b) partial coverage, i.e. a spike of letter ink right at the bar edge versus the background half a line away.
+- QR codes are located from their finder squares (no decoding; jsQR was declined).
+- ID cards are recognised from printed wording. The Aadhaar rule requires the issuer or a "Government of India" line, because forms merely mention Aadhaar.
+- verify() now also fails if a QR code or leaking bar is still visible where removal was requested. A QR code the user chose to keep doesn't block release.
+Consequences: on the user's photo and PDF, block / bar too thin / QR code / PAN card are all found, and redaction places the boxes correctly and passes verify (checked by eye on both outputs). Bar checks are covered by synthetic tests. The QR locator works on the real photo but fails 3 synthetic tests (see PROGRESS blockers), so it isn't yet trustworthy.
+
+## D-031: OCR any image-only page whose largest image covers ≥ 15% (2026-10-30, bug fix; deviates from HLD §3.4's 80%; awaiting user confirmation)
+Context: an unredacted PAN-card photo saved as PDF by macOS Preview (landscape photo, unrotated, on portrait A4) covers ~40% of the page. With the 80% rule the page wasn't "scanned", OCR never ran, and the scan returned metadata only (allow, score 10). The rotated-card QR tests also failed for this reason (~51% cover).
+Decision: `SCANNED_MIN_IMAGE_COVER = 0.15` (still requires < 20 text characters). Only adds detection. Revert = one constant.
+Consequences: OCR now runs on such pages; core tests went from 180 to 182 passing out of 183.
+
+## D-032: Local-threshold OCR pass (2026-10-30; partial fix, see PROGRESS blocker)
+Context: Tesseract reads almost nothing from phone photos of ID cards with patterned, unevenly lit backgrounds (0 words at 1000–2688 px, CLI and tesseract.js alike).
+Decision: `ocr/preprocess.ts` builds a Bradley local-threshold copy (≤ 1600 px, window = short side / 12, 15% darker than the neighbourhood mean). `recognizeBest` OCRs the original and the copy and keeps the reading with more confidently read characters (confidence ≥ 0.5). Used by scanPdf, scanImage and both OCR checks in verify. Cost: about twice the OCR time.
+Consequences: the photo now yields "PAN card" (high, warn) instead of only metadata. The PAN number, name and date of birth are still not read reliably. Settings sweeps didn't fix it; Tesseract's sparse-text mode (`--psm 11`) read a PAN-shaped token in one CLI run. Stopped after two attempts and asked the user.
+
+## D-033: Dark-highlight rule looks at the backdrop directly under the text (2026-10-30, bug fix)
+Context: a dark logo letter on a yellow badge on a navy header band was flagged as critical "blacked out by highlighting".
+Decision: a black_highlight needs the topmost opaque shape painted before the text (under ≥ 60% of the character) to be dark. Two new tests: logo-on-badge (negative), black bar over a light panel (positive).

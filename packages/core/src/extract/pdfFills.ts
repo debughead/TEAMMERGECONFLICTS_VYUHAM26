@@ -65,3 +65,37 @@ function imageLuminance(image: mupdf.Image): number {
     return 1;
   }
 }
+
+/**
+ * The largest image painted on a page and a mapper from its pixel rects to page space. Uses the full
+ * placement transform, so rotated placements (e.g. a landscape photo put on a portrait page) map
+ * correctly. Image pixel (x, y) sits at unit-square point (x/w, y/h) (top row = 0, checked on a
+ * rotated sample).
+ */
+export function largestImage(page: mupdf.Page): { image: mupdf.Image; toPage: (r: Rect) => Rect } | null {
+  let best: { image: mupdf.Image; ctm: mupdf.Matrix; area: number } | null = null as { image: mupdf.Image; ctm: mupdf.Matrix; area: number } | null;
+  const device = new mupdf.Device({
+    fillImage(image, ctm) {
+      const r = mupdf.Rect.transform([0, 0, 1, 1], ctm);
+      const area = (r[2] - r[0]) * (r[3] - r[1]);
+      if (!best || area > best.area) best = { image, ctm, area };
+    },
+  });
+  try {
+    page.runPageContents(device, mupdf.Matrix.identity);
+  } finally {
+    device.close();
+  }
+  if (!best) return null;
+  const { image, ctm } = best;
+  const [a, b, c, d, e, f] = ctm;
+  const w = image.getWidth(), h = image.getHeight();
+  const pt = (x: number, y: number): [number, number] => { const u = x / w, v = y / h; return [a * u + c * v + e, b * u + d * v + f]; };
+  return {
+    image,
+    toPage: (r) => {
+      const ps = [pt(r[0], r[1]), pt(r[2], r[1]), pt(r[0], r[3]), pt(r[2], r[3])];
+      return [Math.min(...ps.map((q) => q[0])), Math.min(...ps.map((q) => q[1])), Math.max(...ps.map((q) => q[0])), Math.max(...ps.map((q) => q[1]))];
+    },
+  };
+}

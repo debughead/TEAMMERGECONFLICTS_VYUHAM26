@@ -2,14 +2,16 @@
 // never reuses objects from the redaction step (rules/core.md).
 import * as mupdf from "mupdf";
 import { hiddenChars } from "./detect/forensic.ts";
+import { lumPlane, pixelLeaks } from "./detect/imageForensics.ts";
 import { findIds } from "./detect/patterns.ts";
 import { decodeUpright, readImageMeta } from "./extract/image.ts";
 import { extractDocx, extractXlsx, openZip } from "./extract/office.ts";
 import { extractPdf, openPdf } from "./extract/pdf.ts";
 import type { OcrWord } from "./extract/textLayer.ts";
 import type { OcrEngine } from "./ocr/engine.ts";
+import { recognizeBest } from "./ocr/preprocess.ts";
 import { normalizeForCompare } from "./pipeline/findings.ts";
-import { OCR_SCALE } from "./pipeline/scanPdf.ts";
+import { OCR_SCALE, scannedPageImage } from "./pipeline/scanPdf.ts";
 import { regionIsBlack } from "./redact/image.ts";
 import type { FileType, Rect, VerifyCheck, VerifyReport } from "./schemas.ts";
 import { center, containsPoint } from "./util/geom.ts";
@@ -30,6 +32,8 @@ function wordsInUnclearedRegions(pix: mupdf.Pixmap, rects: Rect[], words: OcrWor
   const uncleared = rects.filter((r) => !regionIsBlack(pix, r));
   return words.filter((w) => uncleared.some((r) => containsPoint(r, center(w.bbox)))).length;
 }
+
+const overlaps = (a: Rect, b: Rect) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
 const NA = (name: VerifyCheck["name"], why: string): VerifyCheck => ({ name, passed: true, detail: `Not applicable: ${why}` });
 
@@ -53,15 +57,26 @@ export async function verifyPdf(output: Uint8Array, exp: VerifyExpectations, ocr
   let stillHidden = 0;
   let allText = ex.pages.map((p) => p.text).join("\n");
   let ocrPages = 0;
+  let pixelLeakCount = 0;
+  const pixelLeakDetail: string[] = [];
   for (const page of ex.pages) {
     const rects = exp.redactedRects.get(page.index) ?? [];
     for (const ch of page.chars) {
       if (ch.c.trim() && rects.some((r) => containsPoint(r, center(ch.rect)))) inRedacted++;
     }
     stillHidden += hiddenChars(page).filter((h) => h !== null).length;
+    if (page.isScanned) {
+      // The pixels themselves must not still show a QR code or a leaking bar (D-030).
+      // Only areas the user chose to remove must be clean; a QR code they kept is their choice.
+      const { pix: img, toPage } = scannedPageImage(doc, page.index);
+      const leaks = pixelLeaks(lumPlane(img.getPixels(), img.getWidth(), img.getHeight(), img.getStride(), img.getNumberOfComponents()))
+        .map(toPage).filter((l) => rects.some((r) => overlaps(l, r)));
+      pixelLeakCount += leaks.length;
+      if (leaks.length) pixelLeakDetail.push(`page ${page.index + 1}: ${leaks.length} QR code(s) or leaking bar(s) still visible where removal was requested`);
+    }
     if (page.isScanned && ocr) {
       const pix = doc.loadPage(page.index).toPixmap(mupdf.Matrix.scale(OCR_SCALE, OCR_SCALE), mupdf.ColorSpace.DeviceGray, false);
-      const words = await ocr.recognize(pix.asPNG());
+      const words = await recognizeBest(ocr, pix);
       inRedacted += wordsInUnclearedRegions(pix, rects.map((r) => r.map((v) => v * OCR_SCALE) as Rect), words);
       allText += "\n" + ocrText(words);
       ocrPages++;
@@ -75,8 +90,9 @@ export async function verifyPdf(output: Uint8Array, exp: VerifyExpectations, ocr
   const checks: VerifyCheck[] = [
     {
       name: "no_text_in_redacted_areas",
-      passed: inRedacted === 0 && stillHidden === 0,
+      passed: inRedacted === 0 && stillHidden === 0 && pixelLeakCount === 0,
       detail: `${inRedacted} character(s)/word(s) inside redacted areas; ${stillHidden} character(s) still hidden under boxes` +
+        (pixelLeakDetail.length ? `; ${pixelLeakDetail.join("; ")}` : "") +
         (scannedUnread > 0 ? `; ${scannedUnread} scanned page(s) not re-read (OCR off)` : ""),
     },
     { name: "no_removed_values_remain", passed: remaining === 0, detail: `${remaining} of ${exp.removedValues.length} removed value(s) still extractable` },
@@ -93,7 +109,7 @@ export async function verifyPdf(output: Uint8Array, exp: VerifyExpectations, ocr
     },
     NA("no_image_metadata", "PDF output"),
   ];
-  return report(checks, inRedacted + stillHidden + remaining, output);
+  return report(checks, inRedacted + stillHidden + remaining + pixelLeakCount, output);
 }
 
 export async function verifyImage(output: Uint8Array, exp: VerifyExpectations, ocr: OcrEngine | null = null): Promise<VerifyReport> {
@@ -102,11 +118,14 @@ export async function verifyImage(output: Uint8Array, exp: VerifyExpectations, o
   // Output is written upright without EXIF, so orientation 1 is correct; meta.orientation would be 1 too.
   const pix = decodeUpright(output, 1);
   const black = rects.every((r) => regionIsBlack(pix, r));
+  // Areas the user chose to remove must not still show a QR code or a leaking bar (D-030).
+  const leaks = pixelLeaks(lumPlane(pix.getPixels(), pix.getWidth(), pix.getHeight(), pix.getStride(), pix.getNumberOfComponents()))
+    .filter((l) => rects.some((r) => overlaps(l, r)));
 
   let wordsInRects = 0;
   let remaining = 0;
   if (ocr) {
-    const words = await ocr.recognize(pix.asPNG());
+    const words = await recognizeBest(ocr, pix);
     wordsInRects = wordsInUnclearedRegions(pix, rects, words);
     remaining = remainingValues(ocrText(words), exp.removedValues);
   }
@@ -116,8 +135,8 @@ export async function verifyImage(output: Uint8Array, exp: VerifyExpectations, o
   const checks: VerifyCheck[] = [
     {
       name: "no_text_in_redacted_areas",
-      passed: black && wordsInRects === 0,
-      detail: `Redacted regions ${black ? "are solid black" : "still contain image content"}; ${ocr ? `${wordsInRects} word(s) read inside them` : "OCR re-read skipped (OCR off)"}`,
+      passed: black && wordsInRects === 0 && leaks.length === 0,
+      detail: `Redacted regions ${black ? "are solid black" : "still contain image content"}; ${ocr ? `${wordsInRects} word(s) read inside them` : "OCR re-read skipped (OCR off)"}; ${leaks.length} QR code(s) or leaking bar(s) still visible where removal was requested`,
     },
     {
       name: "no_removed_values_remain",
@@ -129,7 +148,7 @@ export async function verifyImage(output: Uint8Array, exp: VerifyExpectations, o
     NA("no_annots_embeds_js", "image output"),
     { name: "no_image_metadata", passed: metaClean, detail: metaClean ? "No EXIF/XMP/IPTC tags or GPS" : "Image metadata remains" },
   ];
-  return report(checks, (black ? 0 : 1) + wordsInRects + remaining + (metaClean ? 0 : 1), output);
+  return report(checks, (black ? 0 : 1) + wordsInRects + remaining + (metaClean ? 0 : 1) + leaks.length, output);
 }
 
 export async function verifyOffice(output: Uint8Array, fileType: Extract<FileType, "docx" | "xlsx">, exp: VerifyExpectations): Promise<VerifyReport> {

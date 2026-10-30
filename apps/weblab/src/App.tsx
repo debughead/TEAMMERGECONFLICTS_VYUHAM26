@@ -15,9 +15,12 @@ export function App() {
   return (
     <div className="mx-auto max-w-6xl p-6">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-3">
+          <img src="/logo.svg" width="44" height="44" alt="" />
+          <div>
           <h1 className="text-2xl font-bold">RedactGuard Web Lab</h1>
           <p className="text-sm text-slate-600">Most tools hide your data. We prove it's gone. Everything runs in this browser tab.</p>
+          </div>
         </div>
         <nav className="flex gap-2">
           {(["lab", "audit"] as const).map((t) => (

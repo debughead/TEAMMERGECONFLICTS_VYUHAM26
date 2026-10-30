@@ -32,9 +32,23 @@ export function hiddenChars(page: PdfPage): (HiddenReason | null)[] {
     if (covering.length === 0) return null;
     const textSeq = owningTextDraw(ch.rect, textDraws)?.seq ?? -1;
     if (covering.some((d) => d.seq > textSeq)) return "under_black_box";
-    // Shape is underneath: hidden only if the text is dark too (black-on-black "highlight").
-    return luminance(ch.color) < DARK_TEXT_LUMINANCE ? "black_highlight" : null;
+    // Shape is underneath: hidden only if the text is dark too (black-on-black "highlight"), and only
+    // if nothing light was painted between that shape and the text (dark logo letter on a light
+    // badge that sits on a dark header band).
+    if (luminance(ch.color) >= DARK_TEXT_LUMINANCE) return null;
+    const backdrop = backdropUnder(ch.rect, textSeq, page.draws);
+    return backdrop && backdrop.luminance < DARK_LUMINANCE ? "black_highlight" : null;
   });
+}
+
+/** The topmost opaque shape painted before `textSeq` that covers the char: what the text sits on. */
+function backdropUnder(rect: Rect, textSeq: number, draws: DrawEvent[]): DrawEvent | undefined {
+  let top: DrawEvent | undefined;
+  for (const d of draws) {
+    if (d.kind === "text" || d.seq >= textSeq || d.alpha < MIN_OPAQUE_ALPHA || area(d.rect) <= 0) continue;
+    if (coverage(rect, d.rect) >= MIN_COVERAGE && (!top || d.seq > top.seq)) top = d;
+  }
+  return top;
 }
 
 /** Smallest text draw whose bounds contain the char centre (text bounds overlap between lines). */

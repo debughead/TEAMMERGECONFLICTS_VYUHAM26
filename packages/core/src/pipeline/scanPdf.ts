@@ -4,11 +4,13 @@ import * as mupdf from "mupdf";
 import { hiddenRuns, hiddenChars } from "../detect/forensic.ts";
 import { findIds, maskForDisplay } from "../detect/patterns.ts";
 import { extractPdf, openPdf, type PdfExtract, type PdfPage } from "../extract/pdf.ts";
+import { largestImage } from "../extract/pdfFills.ts";
 import { earlierRevisions, removedText } from "../extract/pdfRevisions.ts";
 import { layerFromOcrWords, rectsForRange, type TextLayer } from "../extract/textLayer.ts";
 import type { OcrEngine } from "../ocr/engine.ts";
+import { recognizeBest } from "../ocr/preprocess.ts";
 import type { Rect } from "../schemas.ts";
-import { collectTextFindings, FindingCollector, LABEL, REASON_TEXT } from "./findings.ts";
+import { collectImageForensics, collectTextFindings, FindingCollector, LABEL, REASON_TEXT } from "./findings.ts";
 
 export interface PdfScanOutput {
   collector: FindingCollector;
@@ -33,12 +35,23 @@ export async function scanPdf(bytes: Uint8Array, ocr: { engine: OcrEngine | null
 
   for (const page of ex.pages) {
     if (page.isScanned) {
+      // Analyse the embedded photo at its own pixels (rendering the page would resample and blur
+      // bar edges and QR modules), then map results onto the page.
+      const { pix, toPage } = scannedPageImage(doc, page.index);
+      let ocrText = "";
       if (ocr.engine && ocrDone < ocr.pageCap) {
-        layers.push(await ocrPage(doc, page, ocr.engine, out));
+        const layer = await ocrPage(pix, page.index, ocr.engine, out, toPage);
+        layers.push(layer);
+        ocrText = layer.text;
         ocrDone++;
       } else {
         warnings.push(`Page ${page.index + 1} is a scanned image and wasn't read with OCR${ocr.engine ? " (page limit reached)" : ""}`);
       }
+      const bars = collectImageForensics(
+        { pixels: pix.getPixels(), width: pix.getWidth(), height: pix.getHeight(), stride: pix.getStride(), channels: pix.getNumberOfComponents() },
+        ocrText, page.index, toPage, out,
+      );
+      if (bars.barsChecked) warnings.push(`Page ${page.index + 1}: ${bars.barsChecked} black redaction bar(s) checked, ${bars.barsSound} fully cover what's under them`);
       continue;
     }
     scanPageText(page, out);
@@ -69,11 +82,21 @@ function scanPageText(page: PdfPage, out: FindingCollector): void {
   }
 }
 
-async function ocrPage(doc: mupdf.PDFDocument, page: PdfPage, engine: OcrEngine, out: FindingCollector): Promise<TextLayer> {
-  const pix = doc.loadPage(page.index).toPixmap(mupdf.Matrix.scale(OCR_SCALE, OCR_SCALE), mupdf.ColorSpace.DeviceGray, false);
-  const words = await engine.recognize(pix.asPNG());
-  // Pixmap pixels → page points; MuPDF page space and the rendered image share the top-left origin.
-  const layer = layerFromOcrWords(words, page.index, 1 / OCR_SCALE);
+/**
+ * Pixels for an image-only page: the embedded image at native resolution when it fills the page,
+ * otherwise a 300 dpi render. `toPage` maps pixel rects to page points (top-left origin).
+ */
+export function scannedPageImage(doc: mupdf.PDFDocument, pageIndex: number): { pix: mupdf.Pixmap; toPage: (r: Rect) => Rect } {
+  const page = doc.loadPage(pageIndex);
+  const img = largestImage(page);
+  if (img) return { pix: img.image.toPixmap().convertToColorSpace(mupdf.ColorSpace.DeviceRGB, false), toPage: img.toPage };
+  const pix = page.toPixmap(mupdf.Matrix.scale(OCR_SCALE, OCR_SCALE), mupdf.ColorSpace.DeviceRGB, false);
+  return { pix, toPage: (r) => r.map((v) => v / OCR_SCALE) as unknown as Rect };
+}
+
+async function ocrPage(pix: mupdf.Pixmap, pageIndex: number, engine: OcrEngine, out: FindingCollector, toPage: (r: Rect) => Rect): Promise<TextLayer> {
+  const words = await recognizeBest(engine, pix);
+  const layer = layerFromOcrWords(words, pageIndex, toPage);
   collectTextFindings(layer, out, { baseSource: "ocr" });
   return layer;
 }

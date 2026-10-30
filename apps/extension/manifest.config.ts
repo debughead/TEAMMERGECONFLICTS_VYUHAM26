@@ -14,7 +14,8 @@ export default defineManifest({
     { matches: ["<all_urls>"], js: ["src/content/content.ts"], run_at: "document_start", all_frames: true },
   ],
   side_panel: { default_path: "sidepanel.html" },
-  action: { default_title: "RedactGuard" },
+  icons: { 16: "icons/icon16.png", 32: "icons/icon32.png", 48: "icons/icon48.png", 128: "icons/icon128.png" },
+  action: { default_title: "RedactGuard", default_icon: { 16: "icons/icon16.png", 32: "icons/icon32.png" } },
   // MV3 minimum policy plus a network allow-list (D-027): 'wasm-unsafe-eval' lets MuPDF and Tesseract
   // compile WebAssembly, and connect-src means nothing in the extension can reach any server except
   // the Anthropic API (used only when the user turns AI on).

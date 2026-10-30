@@ -1,15 +1,183 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8" /><title>QuickJobs (demo) – Apply</title>
-<style>body{font:15px system-ui;max-width:640px;margin:40px auto;color:#0f172a}label{display:block;margin:16px 0 6px;font-weight:600}.box{border:2px dashed #94a3b8;border-radius:10px;padding:24px;text-align:center;color:#475569}</style></head>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QuickJobs (demo) – Onboarding: salary verification</title>
+<!-- No external fonts, images or scripts: the demo relies on "zero network requests". -->
+<style>
+  :root {
+    --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --bg: #f6f7fb; --card: #fff;
+    --brand: #4f46e5; --brand-ink: #3730a3; --brand-soft: #eef2ff; --ok: #059669;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+  a { color: var(--brand); }
+
+  .demo-strip { background: #fef3c7; color: #92400e; text-align: center; font-size: 13px; padding: 6px 12px; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); }
+  .nav { max-width: 1080px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 28px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; letter-spacing: -0.02em; }
+  .logo-mark { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); display: grid; place-items: center; color: #fff; font-size: 16px; }
+  .nav-links { display: flex; gap: 20px; color: var(--muted); font-size: 14px; }
+  .nav-links span:first-child { color: var(--ink); font-weight: 600; }
+  .avatar { margin-left: auto; width: 34px; height: 34px; border-radius: 50%; background: var(--brand-soft); color: var(--brand-ink); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+
+  main { max-width: 1080px; margin: 28px auto 60px; padding: 0 24px; display: grid; grid-template-columns: 1fr 1.15fr; gap: 24px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } .nav-links { display: none; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+
+  .job-head { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
+  .company { width: 52px; height: 52px; border-radius: 12px; background: #0ea5e9; color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 20px; }
+  .job-head h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+  .job-head p { margin: 2px 0 0; color: var(--muted); }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; padding: 0; list-style: none; }
+  .tags li { background: #f1f5f9; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: #334155; }
+  .job h2 { font-size: 15px; margin: 20px 0 6px; }
+  .job p, .job ul { margin: 0; color: #334155; }
+  .job ul { padding-left: 20px; }
+  .job ul li { margin: 4px 0; }
+
+  form h2 { margin: 0 0 4px; font-size: 20px; }
+  form > p { margin: 0 0 22px; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; } }
+  .field { margin-bottom: 16px; }
+  .field > label, .field > .label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  input[type="text"], input[type="email"], input[type="tel"], textarea {
+    width: 100%; font: inherit; color: inherit; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: #fff;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15); }
+  textarea { min-height: 88px; resize: vertical; }
+
+  /* The real file input stays in the page (the extension listens to it); the drop zone is its label. */
+  .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .drop {
+    display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; cursor: pointer;
+    border: 2px dashed #c7d2fe; border-radius: 14px; padding: 26px 18px; background: #fafbff; color: var(--muted);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--brand); background: var(--brand-soft); }
+  .file-input:focus-visible + .drop { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15); }
+  .drop svg { color: var(--brand); }
+  .drop strong { color: var(--ink); font-size: 15px; }
+  .drop .browse { color: var(--brand); font-weight: 600; }
+  .drop small { font-size: 12px; }
+
+  .submit { width: 100%; margin-top: 6px; padding: 12px; border: 0; border-radius: 10px; background: var(--brand); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .submit:hover { background: var(--brand-ink); }
+  .sent { display: none; margin-top: 14px; padding: 10px 14px; border-radius: 10px; background: #ecfdf5; color: #065f46; font-size: 14px; }
+  .sent.show { display: block; }
+
+
+  .steps { list-style: none; margin: 4px 0 22px; padding: 0; counter-reset: s; }
+  .steps li { counter-increment: s; position: relative; padding: 0 0 18px 40px; color: var(--muted); }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); background: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .steps li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 28px; bottom: 2px; width: 2px; background: var(--line); }
+  .steps li b { display: block; color: var(--ink); font-weight: 600; }
+  .steps li span { font-size: 13px; }
+  .steps li.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: #fff; }
+  .steps li.done::after { background: var(--ok); }
+  .steps li.now::before { border-color: var(--brand); color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+  .steps li.now b { color: var(--brand-ink); }
+  .note { background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 14px; }
+  .note p { margin: 4px 0 0; color: #334155; }
+  .pill { display: inline-block; background: var(--brand-soft); color: var(--brand-ink); font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; margin-bottom: 10px; }
+  .tip { display: flex; gap: 10px; align-items: flex-start; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 12px; padding: 12px 14px; font-size: 13.5px; margin-bottom: 16px; }
+  .tip svg { flex: none; margin-top: 1px; color: #d97706; }
+
+  /* "What the site received": the demo's proof panel, styled like a server log. */
+  .log { grid-column: 1 / -1; background: #0f172a; color: #e2e8f0; border-radius: 16px; padding: 20px 24px; }
+  .log-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .log-head h3 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; }
+  .log-head .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2); }
+  .log-head span { margin-left: auto; color: #94a3b8; font-size: 12px; }
+  #received { list-style: none; margin: 0; padding: 0; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #received:empty::before { content: "Waiting for an upload…"; color: #64748b; }
+  #received li { padding: 8px 0; border-top: 1px solid #1e293b; }
+  #received li:first-child { border-top: 0; }
+  #received li::before { content: "POST /onboarding/salary-proof  "; color: #a5b4fc; }
+  #received a { color: #67e8f9; margin-left: 6px; }
+</style>
+</head>
 <body>
-  <h1>QuickJobs</h1><p>Demo job portal for RedactGuard testing. Fake data only.</p>
-  <form onsubmit="event.preventDefault(); alert('Application sent (demo)')">
-    <label for="name">Full name</label><input id="name" name="name" />
-    <label for="cv">Upload resume</label><input id="cv" type="file" accept=".pdf,.jpg,.png,.docx" />
-    <div class="box" id="drop">or drop your documents here</div>
-    <p><button type="submit">Apply</button></p>
-  </form>
-  <h3>What this site received</h3><ul id="received"></ul>
-  <script>document.getElementById("drop").addEventListener("drop",(e)=>{e.preventDefault();document.getElementById("received").insertAdjacentHTML("beforeend","<li>Received a dropped file</li>")});document.getElementById("drop").addEventListener("dragover",(e)=>e.preventDefault());</script>
+  <div class="demo-strip">Demo job portal for RedactGuard testing. Fake company, fake data only.</div>
+  <header>
+    <div class="nav">
+      <div class="logo"><div class="logo-mark">Q</div>QuickJobs</div>
+      <nav class="nav-links"><span>My onboarding</span><span>Jobs</span><span>Companies</span><span>Messages</span></nav>
+      <div class="avatar" aria-hidden="true">AT</div>
+    </div>
+  </header>
+
+  <main>
+    <aside class="card job">
+      <div class="job-head">
+        <div class="company">N</div>
+        <div>
+          <h1>Welcome aboard, Arjun!</h1>
+          <p>Frontend Engineer · Northwind Labs (fictional) · Bengaluru</p>
+        </div>
+      </div>
+      <ol class="steps">
+        <li class="done"><b>Offer accepted</b><span>18 Oct</span></li>
+        <li class="done"><b>Personal details</b><span>Completed</span></li>
+        <li class="now"><b>Salary verification</b><span>Due in 3 days</span></li>
+        <li><b>Background check</b><span>Locked</span></li>
+        <li><b>Joining day</b><span>2 Dec</span></li>
+      </ol>
+      <div class="note">
+        <b>Why we ask</b>
+        <p>Your offer is based on your last drawn salary, so HR needs to see your salary credits once. We only need your <b>name</b>, <b>account</b> and the <b>salary credit lines</b>.</p>
+      </div>
+    </aside>
+
+    <form class="card" id="apply">
+      <span class="pill">Step 3 of 5</span>
+      <h2>Verify your last drawn salary</h2>
+      <p>Upload a bank statement that shows your last 3 salary credits.</p>
+      <div class="field">
+        <label for="cv">Bank statement showing your salary credits</label>
+        <input class="file-input" id="cv" type="file" accept=".pdf,.jpg,.jpeg,.png" />
+        <label class="drop" id="drop" for="cv">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3"/></svg>
+          <strong>Drop your bank statement here</strong>
+          <span>or <span class="browse">browse files</span></span>
+          <small>PDF, JPG or PNG · up to 15 MB</small>
+        </label>
+      </div>
+      <div class="tip">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <div>Statements often carry more than HR needs: your <b>Aadhaar</b>, <b>PAN</b>, <b>phone</b> and every other transaction. Hide what isn't needed before you upload. A black box drawn in a PDF editor doesn't remove the text underneath.</div>
+      </div>
+      <div class="field"><label for="note">Note to HR <span style="color:var(--muted);font-weight:400">(optional)</span></label><textarea id="note" placeholder="e.g. Salary is credited on the last working day"></textarea></div>
+      <button class="submit" type="submit">Submit for verification</button>
+      <div class="sent" id="sent">Submitted (demo). Nothing was sent anywhere.</div>
+    </form>
+
+    <section class="log" aria-live="polite">
+      <div class="log-head"><div class="dot"></div><h3>What this site received</h3><span>server view, for the demo</span></div>
+      <ul id="received"></ul>
+    </section>
+  </main>
+
+  <script>
+    const drop = document.getElementById("drop");
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      const li = document.createElement("li");
+      li.textContent = "Received a dropped file";
+      document.getElementById("received").appendChild(li);
+    });
+    document.getElementById("apply").addEventListener("submit", (e) => {
+      e.preventDefault();
+      document.getElementById("sent").classList.add("show");
+    });
+  </script>
   <script src="/receiver.js"></script>
-</body></html>
+</body>
+</html>

@@ -26,6 +26,17 @@ describe("forensic: hidden text", () => {
     expect(runs).toEqual([{ text: "HIDDEN TEXT", reason: "black_highlight" }]);
   });
 
+  it("dark text on a light badge that sits on a dark band is visible (negative control)", () => {
+    // A logo letter: dark band, then a light square, then dark text on the square.
+    const { runs } = analyse(pdfFromContent(box(0, 680, 400, 60) + box(60, 690, 40, 40, 0.9) + textOp(70, 702, 20, "T", 0.1)));
+    expect(runs).toEqual([]);
+  });
+
+  it("black text on a black bar is still a highlight when a light panel lies further below", () => {
+    const { runs } = analyse(pdfFromContent(box(40, 670, 400, 60, 0.95) + box(60, 694, 200, 18) + textOp(72, 698, 12, "HIDDEN TEXT", 0)));
+    expect(runs).toEqual([{ text: "HIDDEN TEXT", reason: "black_highlight" }]);
+  });
+
   it("a mid-gray box over text is not treated as a redaction box", () => {
     const { runs } = analyse(pdfFromContent(textOp(72, 700, 12, "Total 1200") + box(60, 696, 120, 16, 0.6)));
     expect(runs).toEqual([]);

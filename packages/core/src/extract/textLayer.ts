@@ -55,7 +55,8 @@ export function charIndicesForRange(layer: TextLayer, start: number, end: number
  * Builds a text layer from OCR words. Each character gets an equal horizontal slice of its word's box,
  * scaled by `scale` (e.g. pixels → PDF points). Spaces between words get no rectangle.
  */
-export function layerFromOcrWords(words: OcrWord[], index: number, scale = 1): TextLayer {
+export function layerFromOcrWords(words: OcrWord[], index: number, scale: number | ((r: Rect) => Rect) = 1): TextLayer {
+  const map = typeof scale === "function" ? scale : (r: Rect) => r.map((v) => v * scale) as unknown as Rect;
   const layer: TextLayer = { index, text: "", textToChar: [], chars: [] };
   const sorted = [...words].sort((a, b) => a.line - b.line || a.bbox[0] - b.bbox[0]);
   let line: number | null = null;
@@ -65,7 +66,7 @@ export function layerFromOcrWords(words: OcrWord[], index: number, scale = 1): T
       layer.textToChar.push(-1);
     }
     line = w.line;
-    const [x0, y0, x1, y1] = w.bbox.map((v) => v * scale) as Rect;
+    const [x0, y0, x1, y1] = map(w.bbox);
     const step = (x1 - x0) / Math.max(1, w.text.length);
     [...w.text].forEach((c, k) => {
       layer.chars.push({ c, rect: [x0 + k * step, y0, x0 + (k + 1) * step, y1] });
