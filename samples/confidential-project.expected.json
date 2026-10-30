@@ -1,0 +1,12 @@
+{
+  "file": "confidential-project.pdf",
+  "description": "Fake project status note marked STRICTLY CONFIDENTIAL: codename, client, sponsor, budget amounts, an intranet link and the AWS documentation example key. Used with the example company policy.",
+  "expectedFindings": [
+    {
+      "type": "email",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}

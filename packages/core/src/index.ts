@@ -3,6 +3,8 @@
 import { runAiFindings, runPageFit, type AiLogEntry } from "./ai/run.ts";
 import { appendAudit, type AuditStore } from "./audit/chain.ts";
 import type { AiClient, AiRequest } from "./ai/schema.ts";
+import { applyPolicy, stricter, type PolicyRun } from "./compliance/evaluate.ts";
+import type { ComplianceReport } from "./compliance/schema.ts";
 import { sniffAndCheck } from "./filetype.ts";
 import type { TextLayer } from "./extract/textLayer.ts";
 import type { OcrEngine } from "./ocr/engine.ts";
@@ -27,6 +29,13 @@ export { dropSession } from "./session.ts";
 export { tesseractEngine, type OcrEngine, type TesseractWorkerLike } from "./ocr/engine.ts";
 export { paddleEngine, withFallback, type OnnxSessionLike, type PaddleModels } from "./ocr/paddle.ts";
 export { AI_MODEL, type AiClient, type AiRequest } from "./ai/schema.ts";
+export {
+  ComplianceReport, CompliancePolicy, Destination, MAX_POLICY_BYTES, POLICY_SCHEMA_ID,
+  type LoadedPolicy, type PolicyAction, type PolicyRule,
+} from "./compliance/schema.ts";
+export { parsePolicy, destinationFor, type PolicyLoad } from "./compliance/load.ts";
+export { GENERAL_COMPANY_POLICY } from "./compliance/packs.ts";
+export type { PolicyRun } from "./compliance/evaluate.ts";
 export { appendAudit, generateAuditKey, verifyChain, memoryAuditStore, type AuditStore, type AuditInput, type ChainCheck } from "./audit/chain.ts";
 
 /** Host-supplied capabilities; functions can't live in the zod-validated options. */
@@ -34,6 +43,8 @@ export interface CoreDeps {
   ocr?: OcrEngine | null;
   /** Present only when the user turned AI on and supplied a key (off by default). */
   ai?: AiClient | null;
+  /** A company policy and where the file is going (D-039). Absent: behaviour is exactly as without policies. */
+  policy?: PolicyRun | null;
   /** When given, redact() writes one row per removed item (value as keyed HMAC only) plus a verify row. */
   audit?: { store: AuditStore; key: CryptoKey; origin: "weblab" | "extension"; domain?: string | null } | null;
 }
@@ -45,6 +56,8 @@ export async function scan(bytes: Uint8Array, options: ScanOptions, deps: CoreDe
 
   let collector: FindingCollector;
   let layers: TextLayer[] = [];
+  /** Text a company policy reads; for Office files that's the document text (no AI layers there). */
+  let policyLayers: TextLayer[] | null = null;
   let pageCount = 1;
   let gps: GpsSummary | null = null;
   let orientation = 1;
@@ -62,6 +75,7 @@ export async function scan(bytes: Uint8Array, options: ScanOptions, deps: CoreDe
   } else {
     const out = await scanOffice(bytes, fileType);
     ({ collector, warnings } = out);
+    policyLayers = out.textLayers;
     ocrStatus = { pagesDone: 0, pagesTotal: 0 };
   }
 
@@ -73,6 +87,8 @@ export async function scan(bytes: Uint8Array, options: ScanOptions, deps: CoreDe
     aiUsed = r.used;
     warnings.push(...r.errors);
   }
+  // Policy last among detectors: its rules can refer to everything found so far, and only add.
+  const compliance: ComplianceReport | null = deps.policy ? applyPolicy(deps.policy, policyLayers ?? layers, collector) : null;
   collector.addCombinationRisks();
   const findings = collector.findings;
 
@@ -80,10 +96,13 @@ export async function scan(bytes: Uint8Array, options: ScanOptions, deps: CoreDe
     ? await runPageFit(opts.context!, findings.map((f) => f.type), deps.ai, aiLog)
     : null;
   if (aiAnswer) aiUsed = true;
-  const { verdict, context } = decideVerdict({ findings, context: opts.context, trustedSite: opts.trustedSite, aiAnswer });
+  const decided = decideVerdict({ findings, context: opts.context, trustedSite: opts.trustedSite, aiAnswer });
+  // The policy's floor applies after everything else, so neither page context nor a trusted site can lower it.
+  const verdict = compliance ? stricter(decided.verdict, compliance.verdictFloor) : decided.verdict;
+  const { context } = decided;
 
   const scanId = crypto.randomUUID();
-  putSession({ scanId, bytes, fileType, findings, secrets: collector.secrets, raws: collector.raws, orientation, aiLog, createdAt: Date.now() });
+  putSession({ scanId, bytes, fileType, findings, secrets: collector.secrets, raws: collector.raws, orientation, aiLog, compliance, createdAt: Date.now() });
   return {
     scanId,
     fileSha256: await sha256Hex(bytes),
@@ -98,6 +117,11 @@ export async function scan(bytes: Uint8Array, options: ScanOptions, deps: CoreDe
     ai: { enabled: Boolean(deps.ai), used: aiUsed, payloadIds: aiLog.map((e) => e.id) },
     warnings,
   };
+}
+
+/** What the company policy decided for an open scan (null when no policy was active). Ids and rule text only. */
+export function complianceReport(scanId: string): ComplianceReport | null {
+  return getSession(scanId)?.compliance ?? null;
 }
 
 /** The exact masked request sent to AI, for the "What was sent" viewer. Contains placeholders only. */

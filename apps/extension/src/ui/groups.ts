@@ -1,5 +1,6 @@
 // How findings are grouped and pre-selected, shared by the in-page card and the side panel.
 import type { Finding, ScanResult } from "@redactguard/core/schemas";
+import type { ComplianceReport } from "@redactguard/core/compliance";
 
 export type GroupId = "hidden" | "ids" | "personal" | "file";
 
@@ -41,10 +42,28 @@ export const inSentence = (label: string) => (/^(Aadhaar|PAN|IFSC|UPI|GPS)/.test
 /** Items the checklist shows: the identity-kit summary is a warning, not something to tick. */
 export const listable = (r: ScanResult) => r.findings.filter((f) => f.type !== "identity_kit");
 
-/** Pre-selection: everything the page doesn't need, plus anything never legitimate to share. */
-export function defaultSelection(r: ScanResult): Set<string> {
+/**
+ * Pre-selection: everything the page doesn't need, plus anything never legitimate to share. A company
+ * policy then has its say (D-039): what it requires is ticked, what it explicitly allows is unticked,
+ * except things that are never legitimate (hidden text, GPS, metadata), which stay ticked.
+ */
+export function defaultSelection(r: ScanResult, c: ComplianceReport | null = null): Set<string> {
   const needed = new Set(r.context?.neededTypes ?? []);
-  return new Set(listable(r).filter((f) => f.redactable && (f.autoCleanable || !needed.has(f.type))).map((f) => f.id));
+  const sel = new Set(listable(r).filter((f) => f.redactable && (f.autoCleanable || !needed.has(f.type))).map((f) => f.id));
+  for (const item of c?.items ?? []) {
+    const f = r.findings.find((x) => x.id === item.findingId);
+    if (!f?.redactable) continue;
+    if (item.action === "keep") { if (!f.autoCleanable) sel.delete(f.id); } else sel.add(f.id);
+  }
+  return sel;
+}
+
+/** The policy's decision for a row (strictest across its copies), if a policy covered it. */
+export function rowPolicy(row: Row, c: ComplianceReport | null): ComplianceReport["items"][number] | null {
+  const rank = { keep: 1, review: 2, remove: 3, block: 4 } as const;
+  let best: ComplianceReport["items"][number] | null = null;
+  for (const i of c?.items ?? []) if (row.ids.includes(i.findingId) && (!best || rank[i.action] > rank[best.action])) best = i;
+  return best;
 }
 
 export const isNeeded = (r: ScanResult, f: Finding) => (r.context?.neededTypes ?? []).includes(f.type) && !f.autoCleanable;
@@ -95,12 +114,15 @@ export function toggleRow(row: Row, selected: Set<string>): Set<string> {
 /** Reasons that only restate the row's label; only real explanations are shown. */
 const BOILERPLATE = /(is visible in the document|is readable in the image|is stored in the file's metadata|tag is stored in its metadata)$/;
 
-/** The row's second line: only what helps the decision (why it's risky, where, whether the page needs it). */
-export function rowNote(r: ScanResult, row: Row): string | null {
+/** The row's second line: only what helps the decision (why it's risky, where, what the company policy says). */
+export function rowNote(r: ScanResult, row: Row, c: ComplianceReport | null = null): string | null {
   // Whether the page needs it is said once, in the verdict ("left unticked"), not on every row.
   const bits: string[] = [];
+  const pol = rowPolicy(row, c);
+  if (pol) bits.push(`${pol.action === "keep" ? "Allowed" : "Required"} by company policy (${pol.title})`);
   const reason = row.f.reason.replace(/ \(\d+ places on this page\)$/, "");
-  if (!BOILERPLATE.test(reason)) bits.push(reason);
+  // A policy find's own reason only repeats the policy line.
+  if (!BOILERPLATE.test(reason) && !(pol && row.f.detector === "rules")) bits.push(reason);
   if (row.ids.length > 1) bits.push(`appears ${row.ids.length} times`);
   if (r.pageCount > 1 && row.pages.length) bits.push(`page${row.pages.length > 1 ? "s" : ""} ${row.pages.map((p) => p + 1).join(", ")}`);
   if (!row.f.redactable) bits.push("can't be removed from this file type here");

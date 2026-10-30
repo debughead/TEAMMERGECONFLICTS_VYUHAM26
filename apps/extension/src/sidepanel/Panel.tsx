@@ -2,13 +2,14 @@
 // settings. Same vocabulary and grouping as the in-page card.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScanContext, ScanResult, VerifyReport } from "@redactguard/core/schemas";
-import { DEFAULT_SETTINGS, Settings, type TabStatus } from "../messages.ts";
+import { GENERAL_COMPANY_POLICY, parsePolicy, type ComplianceReport } from "@redactguard/core/compliance";
+import { DEFAULT_SETTINGS, Settings, StoredPolicy, type TabStatus } from "../messages.ts";
 import { RegionMap } from "./RegionMap.tsx";
 import {
   actionLabel, defaultSelection, displayOf, GROUPS, identityKit, kitSentence, receipt, rowNote, rowsOf, rowState, toggleRow, VERDICT_COPY, type Row,
 } from "../ui/groups.ts";
 
-interface TabState { fileName: string; context: ScanContext; result: ScanResult; status: TabStatus }
+interface TabState { fileName: string; context: ScanContext; result: ScanResult; compliance?: ComplianceReport | null; status: TabStatus }
 type PanelReply = { ok: true; verify: VerifyReport; attached: boolean } | { ok: false; error: string };
 
 const TONE = {
@@ -44,7 +45,7 @@ export function Panel() {
       // A new file in this tab resets the selection to the safe default.
       if (s && s.result.scanId !== lastScan.current) {
         lastScan.current = s.result.scanId;
-        setSelected(defaultSelection(s.result));
+        setSelected(defaultSelection(s.result, s.compliance ?? null));
         setOutcome(null);
       }
     };
@@ -103,6 +104,7 @@ export function Panel() {
             <input type="password" placeholder="Anthropic API key" aria-label="Anthropic API key" value={settings.aiKey} onChange={(e) => save({ ...settings, aiKey: e.target.value.trim() })}
               className="w-full rounded-md border border-rule px-2.5 py-1.5 focus:border-ink focus:outline-none" />
           )}
+          <PolicySettings />
           <div>
             <p className="font-medium">Trusted sites</p>
             {settings.trusted.length === 0 ? <p className="text-[12px] text-muted">None. Trusting a site relaxes warnings there; blocks still apply.</p>
@@ -122,6 +124,8 @@ function Review({ state, selected, setSelected, busy, outcome, onRemove }: {
   state: TabState; selected: Set<string>; setSelected: (s: Set<string>) => void; busy: boolean; outcome: string | null; onRemove: () => void;
 }) {
   const { result, context, fileName, status } = state;
+  const compliance = state.compliance ?? null;
+  const blocked = compliance?.blockedBy ?? null;
   const copy = VERDICT_COPY[result.verdict];
   const tone = TONE[copy.tone];
   const office = result.fileType === "docx" || result.fileType === "xlsx";
@@ -141,6 +145,12 @@ function Review({ state, selected, setSelected, busy, outcome, onRemove }: {
           <span className="text-[12px] text-muted [font-variant-numeric:tabular-nums]">Exposure {result.exposureScore} of 100</span>
         </div>
         {kit && <p className="mt-2 text-[12.5px]">{kitSentence(kit.masked)}</p>}
+        {blocked && (
+          <p className="mt-2 text-[12.5px]"><b>Your company policy doesn't allow sharing this file here.</b> {blocked.title}: {blocked.clause}</p>
+        )}
+        {!blocked && compliance && compliance.matchedRules.length > 0 && (
+          <p className="mt-2 text-[12.5px] text-muted">Company policy "{compliance.policy.name}" applies: {compliance.matchedRules.map((m) => m.title).join(", ")}.</p>
+        )}
         {result.context && (
           <p className="mt-2 text-[12.5px] text-muted">
             The upload field asks for “{context.fieldLabel || "a file"}”.{" "}
@@ -157,7 +167,7 @@ function Review({ state, selected, setSelected, busy, outcome, onRemove }: {
             <h3 className="font-semibold">{g.title} <span className="font-normal text-muted">({rows.length})</span></h3>
             <p className="text-[12px] text-muted">{g.why}</p>
             <ul className="mt-1.5">
-              {rows.map((row) => <RowItem key={row.key} row={row} result={result} selected={selected} disabled={!row.f.redactable || office || done}
+              {rows.map((row) => <RowItem key={row.key} row={row} result={result} compliance={compliance} selected={selected} disabled={!row.f.redactable || office || done || Boolean(blocked)}
                 onToggle={() => setSelected(toggleRow(row, selected))} />)}
             </ul>
             {g.id === "file" && result.gps && <RegionMap gps={result.gps} />}
@@ -169,11 +179,12 @@ function Review({ state, selected, setSelected, busy, outcome, onRemove }: {
         {done ? <p className="font-medium text-clear">{STATUS_COPY[status as Exclude<TabStatus, "pending">]}</p> : (
           <>
             <p className="mb-2 text-[12.5px] text-muted" aria-live="polite">
-              {context.domain} gets <span className="text-ink">{keeps.length ? keeps.join(", ") : "the document with nothing personal in it"}</span>.
+              {blocked ? <>{context.domain} gets <span className="text-ink">nothing</span>: this file can't be uploaded here.</>
+                : <>{context.domain} gets <span className="text-ink">{keeps.length ? keeps.join(", ") : "the document with nothing personal in it"}</span>.</>}
             </p>
-            <button onClick={onRemove} disabled={busy || office || removed === 0}
+            <button onClick={onRemove} disabled={busy || office || removed === 0 || Boolean(blocked)}
               className="w-full rounded-md bg-ink px-4 py-2.5 font-semibold text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:bg-[#a7b0bb]">
-              {busy ? "Removing and verifying…" : office ? "Word and Excel files can't be cleaned here" : removed ? actionLabel(removed) : "Tick what to remove"}
+              {blocked ? "Not allowed by your company policy" : busy ? "Removing and verifying…" : office ? "Word and Excel files can't be cleaned here" : removed ? actionLabel(removed) : "Tick what to remove"}
             </button>
           </>
         )}
@@ -183,11 +194,11 @@ function Review({ state, selected, setSelected, busy, outcome, onRemove }: {
   );
 }
 
-function RowItem({ row, result, selected, disabled, onToggle }: {
-  row: Row; result: ScanResult; selected: Set<string>; disabled: boolean; onToggle: () => void;
+function RowItem({ row, result, compliance, selected, disabled, onToggle }: {
+  row: Row; result: ScanResult; compliance: ComplianceReport | null; selected: Set<string>; disabled: boolean; onToggle: () => void;
 }) {
   const state = rowState(row, selected);
-  const note = rowNote(result, row);
+  const note = rowNote(result, row, compliance);
   const shown = displayOf(row.f);
   const box = useRef<HTMLInputElement>(null);
   useEffect(() => { if (box.current) box.current.indeterminate = state === "mixed"; }, [state]);
@@ -205,6 +216,54 @@ function RowItem({ row, result, selected, disabled, onToggle }: {
         </span>
       </label>
     </li>
+  );
+}
+
+/** Company policy (D-039): upload, use the example, turn off. Checked here with the core's validator. */
+function PolicySettings() {
+  const [policy, setPolicy] = useState<StoredPolicy | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  useEffect(() => {
+    void chrome.storage.local.get("policy").then((v) => { const p = StoredPolicy.safeParse(v["policy"]); setPolicy(p.success ? p.data : null); });
+  }, []);
+  const use = async (text: string) => {
+    setErrors([]);
+    const r = await parsePolicy(text);
+    if (!r.ok) return setErrors(r.errors.slice(0, 6));
+    const { policy: p, sha256 } = r.loaded;
+    const stored: StoredPolicy = {
+      text, name: p.name, version: p.version, sha256, internalDomains: p.internalDomains,
+      rules: p.rules.map((x) => ({ id: x.id, title: x.title, clause: x.clause, outside: x.outside, inside: x.inside })),
+    };
+    await chrome.storage.local.set({ policy: stored });
+    setPolicy(stored);
+    void chrome.runtime.sendMessage({ type: "policy-change", detail: `turned on "${p.name}" v${p.version} (sha256 ${sha256.slice(0, 16)})` });
+  };
+  const off = async () => {
+    await chrome.storage.local.remove("policy");
+    setPolicy(null);
+    void chrome.runtime.sendMessage({ type: "policy-change", detail: "turned the company policy off" });
+  };
+  return (
+    <div>
+      <p className="font-medium">Company policy</p>
+      {policy ? (
+        <div className="text-[12px] text-muted">
+          <p><span className="text-ink">{policy.name}</span> v{policy.version}, fingerprint <code title={policy.sha256}>{policy.sha256.slice(0, 12)}</code></p>
+          <p>Inside the company: {policy.internalDomains.length ? policy.internalDomains.join(", ") : "no domains listed"}. Everywhere else counts as outside.</p>
+          <ul className="mt-1 list-disc pl-4">{policy.rules.map((r) => <li key={r.id}>{r.title}: outside {r.outside}, inside {r.inside}</li>)}</ul>
+        </div>
+      ) : <p className="text-[12px] text-muted">None. Uploads are checked with RedactGuard's own rules only.</p>}
+      <div className="mt-1.5 flex flex-wrap gap-3 text-[12.5px]">
+        <label className="cursor-pointer font-medium underline decoration-rule underline-offset-2 hover:decoration-ink">
+          Upload policy (JSON)
+          <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void f.text().then(use); e.target.value = ""; }} />
+        </label>
+        {!policy && <button className="font-medium underline decoration-rule underline-offset-2 hover:decoration-ink" onClick={() => void use(JSON.stringify(GENERAL_COMPANY_POLICY, null, 2))}>Use the example policy</button>}
+        {policy && <button className="font-medium underline decoration-rule underline-offset-2 hover:decoration-ink" onClick={() => void off()}>Turn off</button>}
+      </div>
+      {errors.length > 0 && <ul className="mt-1 list-disc pl-4 text-[12px] text-stop" role="alert">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
+    </div>
   );
 }
 

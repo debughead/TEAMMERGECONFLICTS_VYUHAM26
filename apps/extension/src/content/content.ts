@@ -2,6 +2,7 @@
 // window.postMessage, read nothing but the upload field's own label/context, UI in a closed shadow
 // root, and the original file is never uploaded silently (rules/extension.md).
 import type { Finding, ScanContext, ScanResult } from "@redactguard/core/schemas";
+import type { ComplianceReport } from "@redactguard/core/compliance";
 import { fromB64, toB64, ToContent, type RedactReply, type ScanReply, type Settings } from "../messages.ts";
 import { actionLabel, defaultSelection, displayOf, GROUPS, identityKit, kitSentence, receipt, rowNote, rowsOf, rowState, toggleRow, VERDICT_COPY, type Row } from "../ui/groups.ts";
 
@@ -92,6 +93,7 @@ async function handlePick(input: HTMLInputElement, file: File): Promise<void> {
   trace("scan-reply", { ok: Boolean(reply?.ok), error: reply && !reply.ok ? reply.error : undefined, verdict: reply?.ok ? reply.result.verdict : undefined, findings: reply?.ok ? reply.result.findings.map((f) => `${f.type}/${f.source}`) : undefined });
   if (!reply?.ok) return card.show({ kind: "error", input, file, context, message: reply?.error ?? "The check didn't finish.", scanId: null });
   const result = reply.result;
+  const compliance = reply.compliance;
   const { mode } = await settings();
 
   const needed = new Set(result.context?.neededTypes ?? []);
@@ -99,7 +101,9 @@ async function handlePick(input: HTMLInputElement, file: File): Promise<void> {
   const office = result.fileType === "docx" || result.fileType === "xlsx";
 
   // Allowed, or Auto-clean with nothing that needs judgment: clean silently, then tell the user.
-  if (!office && (result.verdict === "allow" || (mode === "auto" && onlyCleanable && !result.findings.some((f) => !f.redactable)))) {
+  // A company policy that blocks or requires removals always gets the user's eyes, never a silent clean.
+  const policyNeedsReview = Boolean(compliance?.blockedBy) || (compliance?.items ?? []).some((i) => i.action !== "keep");
+  if (!office && !policyNeedsReview && (result.verdict === "allow" || (mode === "auto" && onlyCleanable && !result.findings.some((f) => !f.redactable)))) {
     const cleanable = result.findings.filter((f) => f.redactable && f.autoCleanable);
     if (cleanable.length === 0) {
       attach(input, file);
@@ -111,7 +115,7 @@ async function handlePick(input: HTMLInputElement, file: File): Promise<void> {
     return; // safeVersion showed the failure card; the original was not attached
   }
   pending.set(result.scanId, { input, file });
-  card.show({ kind: "verdict", input, file, context, result });
+  card.show({ kind: "verdict", input, file, context, result, compliance });
 }
 
 async function safeVersion(input: HTMLInputElement, file: File, result: ScanResult, selectedIds: string[], context: ScanContext): Promise<boolean> {
@@ -166,7 +170,7 @@ type CardState =
   | { kind: "scanning"; fileName: string; label?: string }
   | { kind: "drop" }
   | { kind: "error"; input: HTMLInputElement; file: File; context: ScanContext; message: string; scanId: string | null }
-  | { kind: "verdict"; input: HTMLInputElement; file: File; context: ScanContext; result: ScanResult };
+  | { kind: "verdict"; input: HTMLInputElement; file: File; context: ScanContext; result: ScanResult; compliance: ComplianceReport | null };
 
 // Palette: white paper, navy ink, quiet rules; verdict colours carry meaning only.
 const C = {
@@ -345,8 +349,10 @@ const card = (() => {
   }
 
   function renderVerdict(state: Extract<CardState, { kind: "verdict" }>): void {
-    const { result, input, file, context } = state;
-    const selected = defaultSelection(result);
+    const { result, input, file, context, compliance } = state;
+    const selected = defaultSelection(result, compliance);
+    // A policy rule that forbids sharing this file here: no upload of any kind, cleaned or original (D-039).
+    const blocked = compliance?.blockedBy ?? null;
     const copy = VERDICT_COPY[result.verdict];
     const tone = TONE[copy.tone];
     const office = result.fileType === "docx" || result.fileType === "xlsx";
@@ -363,15 +369,21 @@ const card = (() => {
       h("div", { class: "meter", title: "How much this file exposes, from 0 to 100" }, h("div", { class: "bar", "aria-hidden": "true" }, fill), h("span", { class: "score" }, `Exposure ${result.exposureScore} of 100`)),
     );
     if (kit) band.append(h("div", { class: "kit" }, kitSentence(kit.masked)));
+    if (blocked) {
+      band.append(h("div", { class: "kit" }, h("b", {}, "Your company policy doesn't allow sharing this file here. "), `${blocked.title}: ${blocked.clause}`));
+    } else if (compliance?.matchedRules.length) {
+      band.append(h("div", { class: "kit" }, `Company policy "${compliance.policy.name}" applies: ${compliance.matchedRules.map((m) => m.title).join(", ")}.`));
+    }
 
     const receiptEl = h("div", { class: "receipt", "aria-live": "polite" });
     const primary = h("button", { class: "primary" });
     const syncRows: (() => void)[] = [];
     const refresh = () => {
       const { keeps, removed } = receipt(result, selected);
-      receiptEl.replaceChildren(`${context.domain} gets `, h("b", {}, keeps.length ? keeps.join(", ") : "the document with nothing personal in it"), ".");
-      primary.textContent = office ? "Word and Excel files can't be cleaned here" : removed ? actionLabel(removed) : "Tick what to remove";
-      primary.toggleAttribute("disabled", office || removed === 0);
+      if (blocked) receiptEl.replaceChildren(`${context.domain} gets `, h("b", {}, "nothing"), ": this file can't be uploaded here.");
+      else receiptEl.replaceChildren(`${context.domain} gets `, h("b", {}, keeps.length ? keeps.join(", ") : "the document with nothing personal in it"), ".");
+      primary.textContent = blocked ? "Not allowed by your company policy" : office ? "Word and Excel files can't be cleaned here" : removed ? actionLabel(removed) : "Tick what to remove";
+      primary.toggleAttribute("disabled", Boolean(blocked) || office || removed === 0);
       for (const sync of syncRows) sync();
     };
 
@@ -404,7 +416,7 @@ const card = (() => {
         value.classList.toggle("on", st === "on");
         value.title = st === "on" ? "Will be removed" : "Will be sent";
       });
-      const note = rowNote(result, r);
+      const note = rowNote(result, r, compliance);
       return h("label", { class: `row${box.disabled ? " off" : ""}` }, box, h("div", {},
         h("div", { class: "rt" }, h("b", {}, shown.label), value),
         note ? h("div", { class: "rr" }, note) : null));
@@ -428,7 +440,7 @@ const card = (() => {
     render(h("div", { class: "card", role: "alertdialog", "aria-label": copy.title }, header(), band, body,
       h("div", { class: "foot" }, receiptEl, primary, h("div", { class: "links" }, details, trust),
         office ? h("div", { class: "rr", style: "margin-top:8px" }, "To remove text from Word or Excel files, export to PDF and upload that.") : null,
-        override(input, file, context, result.fileSha256, result.scanId))));
+        blocked ? null : override(input, file, context, result.fileSha256, result.scanId))));
   }
 
   /** "Upload the original anyway" always asks for a reason and writes an audit row first. */

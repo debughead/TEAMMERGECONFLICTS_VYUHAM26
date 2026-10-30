@@ -1,0 +1,30 @@
+{
+  "file": "hr-payslip.pdf",
+  "description": "Fake payslip: employee name and ID, designation, PAN, salary account, pay lines, rating and manager comments. Used with the example company policy.",
+  "expectedFindings": [
+    {
+      "type": "name",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "pan",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "account",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    },
+    {
+      "type": "salary",
+      "source": "text",
+      "page": 0,
+      "min": 1
+    }
+  ]
+}
